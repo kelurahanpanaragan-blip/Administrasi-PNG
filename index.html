@@ -176,46 +176,55 @@
   <script>
     (function(){
       const LOGIN_USER = 'Galz_Hdt';
-      const LOGIN_PASS = '22@Juni_86';
-      window.handleAppLogin = function(e){
+      window.handleAppLogin = async function(e){
         if(e) e.preventDefault();
         const u = (document.getElementById('login-username').value || '').trim();
         const pw = document.getElementById('login-password').value || '';
         const err = document.getElementById('login-error');
-        if(u === LOGIN_USER && pw === LOGIN_PASS){
-          document.body.classList.add('app-authenticated');
-          err.style.display = 'none';
-          document.getElementById('login-password').value = '';
-          setTimeout(function(){
-            const first = document.querySelector('header, main, #app, .container');
-            if(first && first.focus) first.focus();
-          }, 50);
-          return false;
+        const submit = document.querySelector('#login-form button[type="submit"]');
+        if (u !== LOGIN_USER) {
+          err.textContent = 'Username atau password salah.'; err.style.display = 'block';
+          document.getElementById('login-password').select(); return false;
         }
-        err.style.display = 'block';
-        document.getElementById('login-password').select();
+        if (!window.firebaseSecureLogin) {
+          err.textContent = 'Layanan autentikasi belum siap. Periksa koneksi internet lalu muat ulang halaman.';
+          err.style.display = 'block'; return false;
+        }
+        if(submit) { submit.disabled = true; submit.style.opacity = '.7'; }
+        err.style.display = 'none';
+        try {
+          await window.firebaseSecureLogin(pw);
+          document.getElementById('login-password').value = '';
+          document.body.classList.add('app-authenticated');
+          location.reload();
+        } catch (error) {
+          console.error('[Firebase Auth]', error);
+          err.textContent = (error && error.code === 'auth/too-many-requests')
+            ? 'Terlalu banyak percobaan. Coba lagi beberapa saat.'
+            : 'Login gagal. Periksa username dan password Firebase Anda.';
+          err.style.display = 'block';
+          document.getElementById('login-password').select();
+        } finally { if(submit) { submit.disabled = false; submit.style.opacity = ''; } }
         return false;
       };
-      window.handleAppLogout = function(){
+      window.handleAppLogout = async function(){
+        try { if(window.firebaseSecureLogout) await window.firebaseSecureLogout(); }
+        catch(error) { console.error('[Firebase Auth] Logout gagal:', error); }
         document.body.classList.remove('app-authenticated');
         const u = document.getElementById('login-username');
         const pw = document.getElementById('login-password');
         const err = document.getElementById('login-error');
-        if(u) u.value = '';
-        if(pw) pw.value = '';
-        if(err) err.style.display = 'none';
+        if(u) u.value = ''; if(pw) pw.value = '';
+        if(err) { err.textContent = 'Username atau password salah.'; err.style.display = 'none'; }
         setTimeout(function(){ if(u) u.focus(); }, 100);
       };
       document.addEventListener('DOMContentLoaded', function(){
         const toggle = document.getElementById('toggle-login-password');
         const pass = document.getElementById('login-password');
         if(toggle && pass) toggle.addEventListener('click', function(){
-          const show = pass.type === 'password';
-          pass.type = show ? 'text' : 'password';
+          const show = pass.type === 'password'; pass.type = show ? 'text' : 'password';
           this.innerHTML = show ? '<i class="fa-solid fa-eye-slash"></i>' : '<i class="fa-solid fa-eye"></i>';
         });
-        const user = document.getElementById('login-username');
-        if(user) setTimeout(function(){ user.focus(); }, 100);
       });
     })();
   </script>
@@ -1084,12 +1093,26 @@
     </div>
   </footer>
 
-  <!-- Sinkronisasi Firebase Realtime Database (tanpa mengubah tampilan aplikasi) -->
+  <!-- Firebase Authentication + sinkronisasi Realtime Database dengan token pengguna -->
+  <script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-auth-compat.js"></script>
   <script>
   (function () {
     'use strict';
-    const RTDB_URL = 'https://administrasi-png-default-rtdb.asia-southeast1.firebasedatabase.app';
+    const firebaseConfig = {
+      apiKey: 'AIzaSyBDU9EqVPvBayogPPsispPKQi4l--IqpWs',
+      authDomain: 'administrasi-png.firebaseapp.com',
+      projectId: 'administrasi-png',
+      storageBucket: 'administrasi-png.firebasestorage.app',
+      messagingSenderId: '1026637611128',
+      appId: '1:1026637611128:web:96ca7590669030c54fed8',
+      measurementId: 'G-LW5JZSRJNS',
+      databaseURL: 'https://administrasi-png-default-rtdb.asia-southeast1.firebasedatabase.app'
+    };
+    const RTDB_URL = firebaseConfig.databaseURL;
     const ROOT = RTDB_URL + '/appData';
+    const LOGIN_EMAIL = 'kelurahanpanaragan@gmail.com';
+    const LOGIN_USER = 'Galz_Hdt';
     const SYNC_KEYS = new Set([
       'si_database', 'lampiran_database', 'npd_database_v1',
       'si_master_pejabat', 'si_pengguna_anggaran', 'lampiran_recipients',
@@ -1097,125 +1120,112 @@
       'npd_realisasi_bulanan_v1', 'kk_sp2d_bulan_ini_v1'
     ]);
     let applyingRemote = false;
-    let remoteReady = false;
+    let stream = null;
     let remoteSnapshot = {};
     let deferredReload = false;
+    if (!firebase.apps.length) firebase.initializeApp(firebaseConfig);
+    const auth = firebase.auth();
+    auth.setPersistence(firebase.auth.Auth.Persistence.LOCAL).catch(function(e){ console.warn('[Firebase Auth] Persistence:', e); });
 
     function safeParse(raw) { try { return raw == null ? null : JSON.parse(raw); } catch (_) { return raw; } }
-    function getRemoteSync() {
+    async function authedUrl(path) {
+      const user = auth.currentUser;
+      if (!user) throw new Error('Belum login Firebase.');
+      const token = await user.getIdToken();
+      return path + (path.includes('?') ? '&' : '?') + 'auth=' + encodeURIComponent(token);
+    }
+    async function request(path, options) {
+      const url = await authedUrl(path);
+      const response = await fetch(url, options || {});
+      if (!response.ok) throw new Error('Realtime Database HTTP ' + response.status);
+      return response.status === 204 ? null : response.json();
+    }
+    function applyRemoteData(data, reloadIfChanged) {
+      if (!data || typeof data !== 'object') data = {};
+      let changed = false;
+      applyingRemote = true;
+      Object.keys(data).forEach(function(key) {
+        if (!SYNC_KEYS.has(key)) return;
+        const value = data[key] == null ? null : (typeof data[key] === 'string' ? data[key] : JSON.stringify(data[key]));
+        const old = localStorage.getItem(key);
+        if (value === null) { if (old !== null) { localStorage.removeItem(key); changed = true; } }
+        else if (old !== value) { localStorage.setItem(key, value); changed = true; }
+      });
+      applyingRemote = false; remoteSnapshot = data;
+      if (changed && reloadIfChanged) location.reload();
+      return changed;
+    }
+    async function loadRemote() {
+      const data = await request(ROOT + '.json');
+      const changed = data && typeof data === 'object' ? applyRemoteData(data, false) : false;
+      remoteSnapshot = data || {};
+      return changed;
+    }
+    async function putRemote(key, value) {
+      if (!auth.currentUser || !SYNC_KEYS.has(key) || applyingRemote) return;
       try {
-        const xhr = new XMLHttpRequest();
-        xhr.open('GET', ROOT + '.json', false);
-        xhr.send(null);
-        if (xhr.status >= 200 && xhr.status < 300) {
-          const data = xhr.responseText ? JSON.parse(xhr.responseText) : null;
-          if (data && typeof data === 'object') {
-            applyingRemote = true;
-            Object.keys(data).forEach(function (key) {
-              if (SYNC_KEYS.has(key) && data[key] !== null) {
-                localStorage.setItem(key, typeof data[key] === 'string' ? data[key] : JSON.stringify(data[key]));
-              }
-            });
-            applyingRemote = false;
-            remoteSnapshot = data;
-          }
-          remoteReady = true;
-        } else {
-          console.warn('[Firebase] Data awal belum dapat dibaca. Periksa aturan Realtime Database.', xhr.status);
-        }
-      } catch (e) {
-        applyingRemote = false;
-        console.warn('[Firebase] Sinkronisasi awal gagal:', e);
-      }
+        await request(ROOT + '/' + encodeURIComponent(key) + '.json', {
+          method: 'PUT', headers: { 'Content-Type': 'application/json' },
+          body: value === null ? 'null' : JSON.stringify(safeParse(value))
+        });
+      } catch(e) { console.warn('[Firebase] Gagal menyimpan ' + key + ':', e); }
     }
-
-    function putRemote(key, value) {
-      if (!SYNC_KEYS.has(key) || applyingRemote) return;
-      fetch(ROOT + '/' + encodeURIComponent(key) + '.json', {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        body: value === null ? 'null' : JSON.stringify(safeParse(value))
-      }).then(function (r) {
-        if (!r.ok) console.warn('[Firebase] Gagal menyimpan ' + key + ':', r.status);
-      }).catch(function (e) { console.warn('[Firebase] Gagal menyimpan ' + key + ':', e); });
-    }
-
     const originalSetItem = Storage.prototype.setItem;
     const originalRemoveItem = Storage.prototype.removeItem;
-    Storage.prototype.setItem = function (key, value) {
+    Storage.prototype.setItem = function(key, value) {
       originalSetItem.call(this, key, value);
       if (this === localStorage) putRemote(String(key), String(value));
     };
-    Storage.prototype.removeItem = function (key) {
+    Storage.prototype.removeItem = function(key) {
       originalRemoveItem.call(this, key);
       if (this === localStorage) putRemote(String(key), null);
     };
-
-    function hasActiveEditor() {
-      const el = document.activeElement;
-      return !!el && (el.matches('input,textarea,select,[contenteditable="true"]'));
-    }
-    function applyRemoteData(data) {
-      if (!data || typeof data !== 'object') return;
-      let changed = false;
-      applyingRemote = true;
-      Object.keys(data).forEach(function (key) {
-        if (!SYNC_KEYS.has(key)) return;
-        const newValue = data[key] == null ? null : (typeof data[key] === 'string' ? data[key] : JSON.stringify(data[key]));
-        const oldValue = localStorage.getItem(key);
-        if (newValue === null) {
-          if (oldValue !== null) { localStorage.removeItem(key); changed = true; }
-        } else if (oldValue !== newValue) {
-          localStorage.setItem(key, newValue); changed = true;
-        }
-      });
-      applyingRemote = false;
-      remoteSnapshot = data;
-      if (changed) {
-        if (!hasActiveEditor()) location.reload();
-        else deferredReload = true;
-      }
-    }
-
-    getRemoteSync();
-
-    // Setelah aplikasi selesai membaca localStorage, kirim data lokal yang belum ada di cloud.
-    window.addEventListener('load', function () {
-      const seed = {};
-      SYNC_KEYS.forEach(function (key) {
-        const value = localStorage.getItem(key);
-        // Isi hanya data yang belum ada di cloud; data cloud yang sudah ada tetap menjadi sumber utama.
-        if (value !== null && (!remoteSnapshot || !Object.prototype.hasOwnProperty.call(remoteSnapshot, key))) {
-          seed[key] = safeParse(value);
-        }
-      });
-      if (Object.keys(seed).length) {
-        fetch(ROOT + '.json', { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(seed) })
-          .then(function (r) { if (!r.ok) console.warn('[Firebase] Migrasi data lokal gagal:', r.status); })
-          .catch(function (e) { console.warn('[Firebase] Migrasi data lokal gagal:', e); });
-      }
-      // Server-Sent Events: menerima perubahan dari perangkat/browser lain.
-      try {
-        const stream = new EventSource(ROOT + '.json');
-        stream.addEventListener('put', function (event) {
+    function hasActiveEditor() { const el = document.activeElement; return !!el && el.matches('input,textarea,select,[contenteditable="true"]'); }
+    function startRealtime() {
+      if (stream) stream.close();
+      if (!auth.currentUser) return;
+      auth.currentUser.getIdToken().then(function(token) {
+        stream = new EventSource(ROOT + '.json?auth=' + encodeURIComponent(token));
+        stream.addEventListener('put', function(event) {
           try {
             const msg = JSON.parse(event.data);
-            if (msg.path === '/') applyRemoteData(msg.data);
-            else if (msg.path && msg.path.split('/').filter(Boolean).length === 1) {
+            if (msg.path === '/') applyRemoteData(msg.data, true);
+            else if (msg.path) {
               const key = msg.path.split('/').filter(Boolean)[0];
-              if (SYNC_KEYS.has(key)) { const patch = {}; patch[key] = msg.data; applyRemoteData(patch); }
+              if (SYNC_KEYS.has(key)) { const patch = {}; patch[key] = msg.data; applyRemoteData(patch, true); }
             }
-          } catch (e) { console.warn('[Firebase] Pesan realtime tidak dapat diproses:', e); }
+          } catch(e) { console.warn('[Firebase] Realtime data error:', e); }
         });
-        stream.addEventListener('cancel', function () { console.warn('[Firebase] Akses realtime ditolak oleh aturan database.'); });
-        stream.onerror = function () { /* EventSource akan mencoba tersambung kembali otomatis. */ };
-      } catch (e) { console.warn('[Firebase] Realtime listener tidak tersedia:', e); }
-      document.addEventListener('focusout', function () {
-        // Beri waktu handler tombol Simpan berjalan agar perubahan yang sedang diketik tidak hilang.
-        if (deferredReload) setTimeout(function () {
-          if (deferredReload && !hasActiveEditor()) { deferredReload = false; location.reload(); }
-        }, 1500);
-      });
+        stream.addEventListener('cancel', function(){ console.warn('[Firebase] Akses realtime ditolak. Periksa Database Rules.'); });
+        stream.onerror = function(){ /* EventSource mencoba menyambung kembali otomatis. */ };
+      }).catch(function(e){ console.warn('[Firebase] Token realtime gagal:', e); });
+    }
+    window.firebaseSecureLogin = async function(password) {
+      if (document.getElementById('login-username').value.trim() !== LOGIN_USER) throw new Error('Username tidak valid');
+      await auth.signInWithEmailAndPassword(LOGIN_EMAIL, password);
+      await loadRemote();
+      startRealtime();
+    };
+    window.firebaseSecureLogout = async function() {
+      if (stream) { stream.close(); stream = null; }
+      await auth.signOut();
+    };
+    auth.onAuthStateChanged(async function(user) {
+      if (!user) { document.body.classList.remove('app-authenticated'); if(stream) { stream.close(); stream = null; } return; }
+      try {
+        const changed = await loadRemote();
+        if (changed) { location.reload(); return; }
+        document.body.classList.add('app-authenticated');
+        startRealtime();
+      } catch(e) {
+        console.error('[Firebase] Tidak dapat memuat data setelah login:', e);
+        document.body.classList.remove('app-authenticated');
+        const err = document.getElementById('login-error');
+        if (err) { err.textContent = 'Login berhasil, tetapi database menolak akses. Periksa aturan Firebase Realtime Database.'; err.style.display = 'block'; }
+      }
+    });
+    document.addEventListener('focusout', function() {
+      if (deferredReload) setTimeout(function(){ if(deferredReload && !hasActiveEditor()) { deferredReload = false; location.reload(); } }, 1500);
     });
   })();
   </script>
