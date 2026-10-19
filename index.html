@@ -1084,6 +1084,142 @@
     </div>
   </footer>
 
+  <!-- Sinkronisasi Firebase Realtime Database (tanpa mengubah tampilan aplikasi) -->
+  <script>
+  (function () {
+    'use strict';
+    const RTDB_URL = 'https://administrasi-png-default-rtdb.asia-southeast1.firebasedatabase.app';
+    const ROOT = RTDB_URL + '/appData';
+    const SYNC_KEYS = new Set([
+      'si_database', 'lampiran_database', 'npd_database_v1',
+      'si_master_pejabat', 'si_pengguna_anggaran', 'lampiran_recipients',
+      'lampiran_items', 'npd_bulan_pelaporan_v1', 'kk_bulan_pelaporan_v1',
+      'npd_realisasi_bulanan_v1', 'kk_sp2d_bulan_ini_v1'
+    ]);
+    let applyingRemote = false;
+    let remoteReady = false;
+    let remoteSnapshot = {};
+    let deferredReload = false;
+
+    function safeParse(raw) { try { return raw == null ? null : JSON.parse(raw); } catch (_) { return raw; } }
+    function getRemoteSync() {
+      try {
+        const xhr = new XMLHttpRequest();
+        xhr.open('GET', ROOT + '.json', false);
+        xhr.send(null);
+        if (xhr.status >= 200 && xhr.status < 300) {
+          const data = xhr.responseText ? JSON.parse(xhr.responseText) : null;
+          if (data && typeof data === 'object') {
+            applyingRemote = true;
+            Object.keys(data).forEach(function (key) {
+              if (SYNC_KEYS.has(key) && data[key] !== null) {
+                localStorage.setItem(key, typeof data[key] === 'string' ? data[key] : JSON.stringify(data[key]));
+              }
+            });
+            applyingRemote = false;
+            remoteSnapshot = data;
+          }
+          remoteReady = true;
+        } else {
+          console.warn('[Firebase] Data awal belum dapat dibaca. Periksa aturan Realtime Database.', xhr.status);
+        }
+      } catch (e) {
+        applyingRemote = false;
+        console.warn('[Firebase] Sinkronisasi awal gagal:', e);
+      }
+    }
+
+    function putRemote(key, value) {
+      if (!SYNC_KEYS.has(key) || applyingRemote) return;
+      fetch(ROOT + '/' + encodeURIComponent(key) + '.json', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: value === null ? 'null' : JSON.stringify(safeParse(value))
+      }).then(function (r) {
+        if (!r.ok) console.warn('[Firebase] Gagal menyimpan ' + key + ':', r.status);
+      }).catch(function (e) { console.warn('[Firebase] Gagal menyimpan ' + key + ':', e); });
+    }
+
+    const originalSetItem = Storage.prototype.setItem;
+    const originalRemoveItem = Storage.prototype.removeItem;
+    Storage.prototype.setItem = function (key, value) {
+      originalSetItem.call(this, key, value);
+      if (this === localStorage) putRemote(String(key), String(value));
+    };
+    Storage.prototype.removeItem = function (key) {
+      originalRemoveItem.call(this, key);
+      if (this === localStorage) putRemote(String(key), null);
+    };
+
+    function hasActiveEditor() {
+      const el = document.activeElement;
+      return !!el && (el.matches('input,textarea,select,[contenteditable="true"]'));
+    }
+    function applyRemoteData(data) {
+      if (!data || typeof data !== 'object') return;
+      let changed = false;
+      applyingRemote = true;
+      Object.keys(data).forEach(function (key) {
+        if (!SYNC_KEYS.has(key)) return;
+        const newValue = data[key] == null ? null : (typeof data[key] === 'string' ? data[key] : JSON.stringify(data[key]));
+        const oldValue = localStorage.getItem(key);
+        if (newValue === null) {
+          if (oldValue !== null) { localStorage.removeItem(key); changed = true; }
+        } else if (oldValue !== newValue) {
+          localStorage.setItem(key, newValue); changed = true;
+        }
+      });
+      applyingRemote = false;
+      remoteSnapshot = data;
+      if (changed) {
+        if (!hasActiveEditor()) location.reload();
+        else deferredReload = true;
+      }
+    }
+
+    getRemoteSync();
+
+    // Setelah aplikasi selesai membaca localStorage, kirim data lokal yang belum ada di cloud.
+    window.addEventListener('load', function () {
+      const seed = {};
+      SYNC_KEYS.forEach(function (key) {
+        const value = localStorage.getItem(key);
+        // Isi hanya data yang belum ada di cloud; data cloud yang sudah ada tetap menjadi sumber utama.
+        if (value !== null && (!remoteSnapshot || !Object.prototype.hasOwnProperty.call(remoteSnapshot, key))) {
+          seed[key] = safeParse(value);
+        }
+      });
+      if (Object.keys(seed).length) {
+        fetch(ROOT + '.json', { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(seed) })
+          .then(function (r) { if (!r.ok) console.warn('[Firebase] Migrasi data lokal gagal:', r.status); })
+          .catch(function (e) { console.warn('[Firebase] Migrasi data lokal gagal:', e); });
+      }
+      // Server-Sent Events: menerima perubahan dari perangkat/browser lain.
+      try {
+        const stream = new EventSource(ROOT + '.json');
+        stream.addEventListener('put', function (event) {
+          try {
+            const msg = JSON.parse(event.data);
+            if (msg.path === '/') applyRemoteData(msg.data);
+            else if (msg.path && msg.path.split('/').filter(Boolean).length === 1) {
+              const key = msg.path.split('/').filter(Boolean)[0];
+              if (SYNC_KEYS.has(key)) { const patch = {}; patch[key] = msg.data; applyRemoteData(patch); }
+            }
+          } catch (e) { console.warn('[Firebase] Pesan realtime tidak dapat diproses:', e); }
+        });
+        stream.addEventListener('cancel', function () { console.warn('[Firebase] Akses realtime ditolak oleh aturan database.'); });
+        stream.onerror = function () { /* EventSource akan mencoba tersambung kembali otomatis. */ };
+      } catch (e) { console.warn('[Firebase] Realtime listener tidak tersedia:', e); }
+      document.addEventListener('focusout', function () {
+        // Beri waktu handler tombol Simpan berjalan agar perubahan yang sedang diketik tidak hilang.
+        if (deferredReload) setTimeout(function () {
+          if (deferredReload && !hasActiveEditor()) { deferredReload = false; location.reload(); }
+        }, 1500);
+      });
+    });
+  })();
+  </script>
+
   <!-- SCRIPT UTAMA -->
   <script>
     // Initial Master Data from Uploaded Excel Sheet1
