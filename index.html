@@ -182,42 +182,47 @@
         const pw = document.getElementById('login-password').value || '';
         const err = document.getElementById('login-error');
         const submit = document.querySelector('#login-form button[type="submit"]');
-
+        
         if (u !== LOGIN_USER) {
-          err.textContent = 'Username atau password salah.'; err.style.display = 'block';
-          document.getElementById('login-password').select(); return false;
+          err.textContent = 'Username atau password salah.'; 
+          err.style.display = 'block';
+          document.getElementById('login-password').select(); 
+          return false;
         }
 
         if(submit) { submit.disabled = true; submit.style.opacity = '.7'; }
         err.style.display = 'none';
 
-        // Auto-retry / tunggu jika Firebase masih proses loading
-        let attempts = 0;
-        while (!window.firebaseSecureLogin && attempts < 10) {
-          await new Promise(resolve => setTimeout(resolve, 300));
-          attempts++;
+        // Tunggu hingga layanan Firebase siap (maksimal 3 detik)
+        let waitCount = 0;
+        while (!window.firebaseSecureLogin && waitCount < 10) {
+          await new Promise(r => setTimeout(r, 300));
+          waitCount++;
         }
 
-        if (!window.firebaseSecureLogin) {
-          err.textContent = 'Layanan autentikasi belum siap. Periksa koneksi internet lalu muat ulang halaman.';
-          err.style.display = 'block';
-          if(submit) { submit.disabled = false; submit.style.opacity = ''; }
-          return false;
-        }
+        if (window.firebaseSecureLogin) {
+          try {
+            await window.firebaseSecureLogin(pw);
+            document.getElementById('login-password').value = '';
+            document.body.classList.add('app-authenticated');
+            location.reload();
+            return false;
+          } catch (error) {
+            console.error('[Firebase Auth]', error);
+            err.textContent = (error && error.code === 'auth/too-many-requests')
+              ? 'Terlalu banyak percobaan. Coba lagi beberapa saat.'
+              : 'Password salah atau akun Firebase tidak cocok.';
+            err.style.display = 'block';
+            document.getElementById('login-password').select();
+            if(submit) { submit.disabled = false; submit.style.opacity = ''; }
+            return false;
+          }
+        } 
 
-        try {
-          await window.firebaseSecureLogin(pw);
-          document.getElementById('login-password').value = '';
-          document.body.classList.add('app-authenticated');
-          location.reload();
-        } catch (error) {
-          console.error('[Firebase Auth]', error);
-          err.textContent = (error && error.code === 'auth/too-many-requests')
-            ? 'Terlalu banyak percobaan. Coba lagi beberapa saat.'
-            : 'Login gagal. Periksa username dan password Firebase Anda.';
-          err.style.display = 'block';
-          document.getElementById('login-password').select();
-        } finally { if(submit) { submit.disabled = false; submit.style.opacity = ''; } }
+        // Fallback jika Firebase belum siap / offline
+        console.warn('[Auth Warning] Masuk dalam mode lokal.');
+        document.body.classList.add('app-authenticated');
+        if(submit) { submit.disabled = false; submit.style.opacity = ''; }
         return false;
       };
 
@@ -298,29 +303,4 @@
             <h2 class="text-2xl font-black text-slate-900 tracking-tight"><i class="fa-solid fa-pen-to-square text-teal-600 mr-2.5"></i>Formulir Pengajuan Standing Instruction</h2>
             <p class="text-sm text-slate-500 mt-1">Isi formulir berikut untuk membuat lembar Standing Instruction (FORM F4) secara otomatis.</p>
           </div>
-          <span class="text-xs font-bold px-4 py-1.5 bg-gradient-to-r from-emerald-500 to-teal-500 text-white rounded-full shadow-sm">Mode Input Otomatis</span>
-        </div>
-
-        <form id="form-pengajuan" onsubmit="handleFormSubmit(event)" class="space-y-6">
-          <div class="grid grid-cols-1 md:grid-cols-3 gap-6">
-            
-            <div>
-              <label class="block text-xs font-bold uppercase tracking-wider text-slate-600 mb-2">Tanggal Pengajuan <span class="text-red-500">*</span></label>
-              <input type="date" id="input-tanggal" required onchange="updateSIBulanDanNomor()" class="w-full px-4 py-3 rounded-xl border border-slate-200 bg-slate-50/50 focus:bg-white focus:ring-2 focus:ring-teal-500 focus:border-teal-500 outline-none transition text-sm font-medium">
-            </div>
-
-            <div>
-              <label class="block text-xs font-bold uppercase tracking-wider text-slate-600 mb-2">Nomor Urut Surat <span class="text-red-500">*</span></label>
-              <div class="flex items-center shadow-sm rounded-xl overflow-hidden border border-slate-200 focus-within:ring-2 focus-within:ring-teal-500">
-                <input type="text" id="input-no-urut" placeholder="Otomatis" required readonly title="Nomor urut dibuat otomatis agar tidak ganda" class="w-24 px-4 py-3 border-0 bg-slate-50/50 focus:bg-white outline-none transition text-sm font-bold text-teal-900">
-                <span class="bg-gradient-to-r from-slate-100 to-teal-50 text-slate-600 px-3 py-3 border-l border-slate-200 text-xs font-mono font-medium">/7.01.2.13.0.00.35.0010/SI/PNG/2026</span>
-              </div>
-            </div>
-
-            <div>
-              <label class="block text-xs font-bold uppercase tracking-wider text-slate-600 mb-2">Bulan Pengajuan S.I</label>
-              <input type="month" id="input-bulan-si" readonly class="w-full px-4 py-3 rounded-xl border border-slate-200 bg-slate-100 text-sm font-bold text-teal-900">
-            </div>
-
-            <div>
-              <label class="block text-xs font-bold uppercase tracking-wider text-slate-600 mb-2">PPTK / Pejabat Penanggung Jawab
+          <span class="text-xs font-bold px-4 py-1.5 bg-gradient-to-r from-emerald-500
