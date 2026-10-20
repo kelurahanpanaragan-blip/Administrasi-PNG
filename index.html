@@ -1161,17 +1161,101 @@
       remoteSnapshot = data || {};
       return changed;
     }
-    async function putRemote(key, value) {
-      if (!auth.currentUser || !SYNC_KEYS.has(key) || applyingRemote) return;
-      try {
-        await request(ROOT + '/' + encodeURIComponent(key) + '.json', {
-          method: 'PUT', headers: { 'Content-Type': 'application/json' },
-          body: value === null ? 'null' : JSON.stringify(safeParse(value))
-        });
-      } catch(e) { console.warn('[Firebase] Gagal menyimpan ' + key + ':', e); }
-    }
     const originalSetItem = Storage.prototype.setItem;
     const originalRemoveItem = Storage.prototype.removeItem;
+    const PENDING_KEY = '__firebase_pending_sync_v1__';
+    const writeQueues = new Map();
+    let syncIndicator = null;
+    function setSyncStatus(message, state) {
+      if (!syncIndicator && document.body) {
+        syncIndicator = document.createElement('div');
+        syncIndicator.id = 'firebase-sync-status';
+        syncIndicator.setAttribute('role', 'status');
+        syncIndicator.style.cssText = 'position:fixed;right:12px;bottom:12px;z-index:99999;padding:9px 13px;border-radius:10px;font:600 12px Arial,sans-serif;box-shadow:0 3px 14px #0002;max-width:calc(100vw - 24px);background:#e2e8f0;color:#334155;';
+        document.body.appendChild(syncIndicator);
+      }
+      if (syncIndicator) {
+        syncIndicator.textContent = message;
+        syncIndicator.style.background = state === 'ok' ? '#dcfce7' : state === 'error' ? '#fee2e2' : state === 'busy' ? '#fef3c7' : '#e2e8f0';
+        syncIndicator.style.color = state === 'ok' ? '#166534' : state === 'error' ? '#991b1b' : state === 'busy' ? '#92400e' : '#334155';
+      }
+    }
+    if (document.body) setSyncStatus('Firebase siap — menunggu login', 'idle');
+    function readPending() {
+      try { return JSON.parse(localStorage.getItem(PENDING_KEY) || '{}') || {}; }
+      catch (_) { return {}; }
+    }
+    function writePending(pending) {
+      try {
+        if (Object.keys(pending).length) originalSetItem.call(localStorage, PENDING_KEY, JSON.stringify(pending));
+        else originalRemoveItem.call(localStorage, PENDING_KEY);
+      } catch (e) { console.warn('[Firebase] Tidak dapat menandai antrean simpan:', e); }
+    }
+    function markPending(key, value) {
+      const pending = readPending();
+      pending[key] = value;
+      writePending(pending);
+    }
+    async function sendRemote(key, value) {
+      await request(ROOT + '/' + encodeURIComponent(key) + '.json', {
+        method: 'PUT', headers: { 'Content-Type': 'application/json' },
+        body: value === null ? 'null' : JSON.stringify(safeParse(value))
+      });
+    }
+    async function putRemote(key, value) {
+      if (!auth.currentUser || !SYNC_KEYS.has(key) || applyingRemote) return;
+      // Simpan antrean lokal lebih dahulu agar perubahan tetap bisa dikirim saat aplikasi dibuka lagi.
+      markPending(key, value);
+      const previous = writeQueues.get(key) || Promise.resolve();
+      const next = previous.catch(function() {}).then(async function() {
+        if (!auth.currentUser) throw new Error('Belum login Firebase. Perubahan ditahan di perangkat.');
+        setSyncStatus('Menyimpan perubahan ke Firebase…', 'busy');
+        let lastError;
+        for (let attempt = 0; attempt < 3; attempt++) {
+          try {
+            await sendRemote(key, value);
+            const pending = readPending();
+            // Jangan menghapus antrean yang lebih baru dari permintaan yang baru berhasil.
+            if (Object.prototype.hasOwnProperty.call(pending, key) && pending[key] === value) {
+              delete pending[key];
+              writePending(pending);
+            }
+            setSyncStatus(Object.keys(readPending()).length ? 'Ada perubahan menunggu sinkronisasi' : 'Tersimpan di Firebase', Object.keys(readPending()).length ? 'busy' : 'ok');
+            return;
+          } catch (e) {
+            lastError = e;
+            if (attempt < 2) await new Promise(resolve => setTimeout(resolve, 700 * (attempt + 1)));
+          }
+        }
+        console.error('[Firebase] Gagal menyimpan ' + key + ':', lastError);
+        setSyncStatus('Gagal tersimpan ke Firebase — data lokal dipertahankan', 'error');
+        throw lastError;
+      });
+      writeQueues.set(key, next);
+      try { await next; }
+      catch (e) { /* antrean lokal dipertahankan untuk dicoba kembali setelah login/koneksi pulih */ }
+      finally { if (writeQueues.get(key) === next) writeQueues.delete(key); }
+    }
+    async function flushPendingRemote() {
+      const pending = readPending();
+      const keys = Object.keys(pending).filter(key => SYNC_KEYS.has(key));
+      if (!keys.length) return;
+      setSyncStatus('Mengirim perubahan tertunda ke Firebase…', 'busy');
+      for (const key of keys) {
+        const value = pending[key];
+        try {
+          await sendRemote(key, value);
+          const latest = readPending();
+          if (Object.prototype.hasOwnProperty.call(latest, key) && latest[key] === value) delete latest[key];
+          writePending(latest);
+        } catch (e) {
+          console.error('[Firebase] Gagal mengirim antrean ' + key + ':', e);
+          setSyncStatus('Gagal sinkronisasi — data lokal masih disimpan', 'error');
+          throw e;
+        }
+      }
+      setSyncStatus('Perubahan tertunda berhasil dikirim', 'ok');
+    }
     Storage.prototype.setItem = function(key, value) {
       originalSetItem.call(this, key, value);
       if (this === localStorage) putRemote(String(key), String(value));
@@ -1203,8 +1287,7 @@
     window.firebaseSecureLogin = async function(password) {
       if (document.getElementById('login-username').value.trim() !== LOGIN_USER) throw new Error('Username tidak valid');
       await auth.signInWithEmailAndPassword(LOGIN_EMAIL, password);
-      await loadRemote();
-      startRealtime();
+      // Pemulihan antrean ditangani auth.onAuthStateChanged sebelum data cloud dimuat.
     };
     window.firebaseSecureLogout = async function() {
       if (stream) { stream.close(); stream = null; }
@@ -1213,9 +1296,12 @@
     auth.onAuthStateChanged(async function(user) {
       if (!user) { document.body.classList.remove('app-authenticated'); if(stream) { stream.close(); stream = null; } return; }
       try {
+        // Kirim perubahan yang sebelumnya gagal terlebih dahulu supaya tidak ditimpa data cloud lama.
+        await flushPendingRemote();
         const changed = await loadRemote();
         if (changed) { location.reload(); return; }
         document.body.classList.add('app-authenticated');
+        setSyncStatus('Terhubung ke Firebase', 'ok');
         startRealtime();
       } catch(e) {
         console.error('[Firebase] Tidak dapat memuat data setelah login:', e);
