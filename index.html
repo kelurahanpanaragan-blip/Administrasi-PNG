@@ -471,7 +471,7 @@
           <div>
             <h2 class="text-2xl font-black text-slate-900 tracking-tight"><i class="fa-solid fa-file-invoice text-teal-600 mr-2.5"></i>Formulir Nota Pencairan Dana (NPD)</h2>
             <p class="text-sm text-slate-500 mt-1">Format mengikuti file NPD 2026. Data merah pada contoh dibuat otomatis mengikuti Standing Instruction dan Sheet Setting.</p>
-            <div class="flex flex-wrap items-center gap-2 mt-3"><select id="npd-bulan-rekap" class="table-input bg-white font-bold text-teal-800" aria-label="Bulan rekap NPD"></select><button onclick="printMonthlyNPD(document.getElementById('npd-bulan-rekap').value)" class="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-xs font-bold"><i class="fa-solid fa-calendar-days mr-1"></i> NPD per Bulan</button></div>
+            <div class="flex flex-wrap items-center gap-2 mt-3"><select id="npd-bulan-rekap" class="table-input bg-white font-bold text-teal-800" aria-label="Bulan rekap NPD" onchange="renderMonthlyNPDTransactions()"></select><button onclick="printMonthlyNPD(document.getElementById('npd-bulan-rekap').value)" class="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-xs font-bold"><i class="fa-solid fa-calendar-days mr-1"></i> NPD per Bulan</button></div><div id="npd-monthly-transactions" class="mt-3 p-3 rounded-xl border border-slate-200 bg-slate-50 min-w-0"></div>
           </div>
           <span class="text-xs font-bold px-4 py-1.5 bg-gradient-to-r from-emerald-500 to-teal-500 text-white rounded-full shadow-sm">Terhubung S.I + Setting</span>
         </div>
@@ -637,10 +637,11 @@
             <h2 class="text-2xl font-black text-slate-900 tracking-tight"><i class="fa-solid fa-table-columns text-teal-600 mr-2.5"></i>Kartu Kendali Kegiatan</h2>
             <p class="text-sm text-slate-500 mt-1">Rincian mengikuti NPD yang sedang dipilih. Perhitungan Pagu, Bulan Lalu, Bulan Ini, Kumulatif dan Sisa mengikuti skema NPD.</p>
           </div>
-          <div class="flex flex-wrap gap-2"><select id="kk-bulan-rekap" class="table-input bg-white font-bold text-teal-800" aria-label="Bulan rekap kartu kendali"></select><button onclick="printMonthlyKK(document.getElementById('kk-bulan-rekap').value)" class="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-bold rounded-xl"><i class="fa-solid fa-calendar-days mr-1"></i> Kartu Kendali per Bulan</button><button onclick="printKK()" class="px-5 py-2.5 bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-700 hover:to-teal-700 text-white text-sm font-black rounded-xl shadow-md">
+          <div class="flex flex-wrap gap-2"><select id="kk-bulan-rekap" class="table-input bg-white font-bold text-teal-800" aria-label="Bulan rekap kartu kendali" onchange="renderMonthlyKKTransactions()"></select><button onclick="printMonthlyKK(document.getElementById('kk-bulan-rekap').value)" class="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-bold rounded-xl"><i class="fa-solid fa-calendar-days mr-1"></i> Kartu Kendali per Bulan</button><button onclick="saveKKSnapshot();alert('Kartu Kendali berhasil disimpan.')" class="px-4 py-2 bg-teal-600 hover:bg-teal-700 text-white text-xs font-bold rounded-xl"><i class="fa-solid fa-floppy-disk mr-1"></i> Simpan Kartu Kendali</button><button onclick="printKK()" class="px-5 py-2.5 bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-700 hover:to-teal-700 text-white text-sm font-black rounded-xl shadow-md">
             <i class="fa-solid fa-print mr-2 text-amber-200"></i> Cetak Kartu Kendali
           </button></div>
         </div>
+        <div id="kk-monthly-transactions" class="mt-3 p-3 rounded-xl border border-slate-200 bg-slate-50"></div>
         <div class="bg-teal-50 border border-teal-100 rounded-2xl p-4 text-sm">
           <div class="font-bold text-teal-950">Sumber data</div>
           <div class="text-teal-800 mt-1">Kegiatan/Sub Kegiatan mengikuti pilihan NPD. Jika pilihan NPD berubah, Kartu Kendali ikut diperbarui otomatis.</div>
@@ -1117,7 +1118,7 @@
       'si_database', 'lampiran_database', 'npd_database_v1',
       'si_master_pejabat', 'si_pengguna_anggaran', 'lampiran_recipients',
       'lampiran_items', 'npd_bulan_pelaporan_v1', 'kk_bulan_pelaporan_v1',
-      'npd_realisasi_bulanan_v1', 'kk_sp2d_bulan_ini_v1'
+      'npd_realisasi_bulanan_v1', 'kk_sp2d_bulan_ini_v1', 'kk_database_v1'
     ]);
     let applyingRemote = false;
     let stream = null;
@@ -1311,6 +1312,9 @@
   // Initialize integrated Lampiran module
       initLampiran();
       npdInit();
+      initMonthlySelectors();
+      renderMonthlyNPDTransactions();
+      renderMonthlyKKTransactions();
     });
 
     function monthLabel(m){ if(!/^\d{4}-\d{2}$/.test(String(m||''))) return '-'; return new Date(m+'-01T00:00:00').toLocaleDateString('id-ID',{month:'long',year:'numeric'}); }
@@ -1329,8 +1333,11 @@
       try{JSON.parse(localStorage.getItem('si_database')||'[]').forEach(x=>{const m=x.bulan||(x.tanggal||'').slice(0,7);if(/^\d{4}-\d{2}$/.test(m))allMonths.add(m)})}catch(e){}
       try{JSON.parse(localStorage.getItem('lampiran_database')||'[]').forEach(x=>{if(/^\d{4}-\d{2}$/.test(x.bulan))allMonths.add(x.bulan)})}catch(e){}
       try{JSON.parse(localStorage.getItem('npd_database_v1')||'[]').forEach(x=>{if(/^\d{4}-\d{2}$/.test(x.month))allMonths.add(x.month)})}catch(e){}
+      try{JSON.parse(localStorage.getItem('kk_database_v1')||'[]').forEach(x=>{if(/^\d{4}-\d{2}$/.test(x.month))allMonths.add(x.month)})}catch(e){}
       const now=new Date(), current=`${now.getFullYear()}-${String(now.getMonth()+1).padStart(2,'0')}`; allMonths.add(current);
       for(const id of ids){const el=document.getElementById(id);if(!el)continue;const old=el.value;el.innerHTML=[...allMonths].sort().reverse().map(m=>`<option value="${m}">${monthLabel(m)}</option>`).join('');el.value=allMonths.has(old)?old:current;}
+      if(typeof renderMonthlyNPDTransactions==='function') renderMonthlyNPDTransactions();
+      if(typeof renderMonthlyKKTransactions==='function') renderMonthlyKKTransactions();
     }
     function printMonthlyReport(title,month,content,signatures=''){
       if(!month){alert('Pilih bulan terlebih dahulu.');return;}
@@ -1352,30 +1359,49 @@
     function printMonthlyLampiran(month){
       const list=db.filter(d=>d.bulan===month).slice().sort((a,b)=>(a.tanggal||'').localeCompare(b.tanggal||''));
       if(!list.length){alert('Belum ada Lampiran tersimpan untuk bulan '+monthLabel(month)+'.');return;}
-      let body='',idx=1,tot={jumlah:0,negosiasi:0,ppn:0,p21:0,p22:0,p23:0,pot:0,bayar:0};
-      list.forEach((d,j)=>{body+=`<tr><td colspan="14"><b>Transaksi ${j+1}</b> — S.I: ${esc(d.siNo||'-')} | ${esc(d.tanggal||'')} | ${esc(d.subkegiatan||'')}</td></tr>`;(d.rows||[]).forEach(r=>{const pot=Number(r.negosiasi||0)+Number(r.ppn||0)+Number(r.p21||0)+Number(r.p22||0)+Number(r.p23||0),bayar=Math.max(0,Number(r.jumlah||0)-pot);tot.jumlah+=Number(r.jumlah||0);tot.negosiasi+=Number(r.negosiasi||0);tot.ppn+=Number(r.ppn||0);tot.p21+=Number(r.p21||0);tot.p22+=Number(r.p22||0);tot.p23+=Number(r.p23||0);tot.pot+=pot;tot.bayar+=bayar;body+=`<tr><td>${idx++}</td><td>${esc(r.kode)}</td><td>${esc(r.uraian)}</td><td>${esc(r.penerima)}</td><td>${esc(r.bank)}</td><td>${esc(r.rek)}</td><td class="right">${Number(r.jumlah||0).toLocaleString('id-ID')}</td><td class="right">${Number(r.negosiasi||0).toLocaleString('id-ID')}</td><td class="right">${Number(r.ppn||0).toLocaleString('id-ID')}</td><td class="right">${Number(r.p21||0).toLocaleString('id-ID')}</td><td class="right">${Number(r.p22||0).toLocaleString('id-ID')}</td><td class="right">${Number(r.p23||0).toLocaleString('id-ID')}</td><td class="right">${pot.toLocaleString('id-ID')}</td><td class="right">${bayar.toLocaleString('id-ID')}</td></tr>`})});
-      body+=`<tr class="total"><td colspan="6" class="right">TOTAL BULANAN</td><td class="right">${tot.jumlah.toLocaleString('id-ID')}</td><td class="right">${tot.negosiasi.toLocaleString('id-ID')}</td><td class="right">${tot.ppn.toLocaleString('id-ID')}</td><td class="right">${tot.p21.toLocaleString('id-ID')}</td><td class="right">${tot.p22.toLocaleString('id-ID')}</td><td class="right">${tot.p23.toLocaleString('id-ID')}</td><td class="right">${tot.pot.toLocaleString('id-ID')}</td><td class="right">${tot.bayar.toLocaleString('id-ID')}</td></tr>`;
-      printMonthlyReport('REKAP LAMPIRAN TRANSAKSI',month,`<table><thead><tr><th>No</th><th>Kode Rekening</th><th>Uraian</th><th>Penerima</th><th>Bank</th><th>Rekening</th><th>Jumlah</th><th>Negosiasi</th><th>PPN</th><th>PPh21</th><th>PPh22</th><th>PPh23</th><th>Potongan</th><th>Dibayarkan</th></tr></thead><tbody>${body}</tbody></table>`,monthlySignatures(activeSI?.pptk||''));
+      const pages=list.map((d,j)=>{
+        let tot={jumlah:0,negosiasi:0,ppn:0,p21:0,p22:0,p23:0,pot:0,bayar:0};
+        const rows=(d.rows||[]).map((r,i)=>{const pot=Number(r.negosiasi||0)+Number(r.ppn||0)+Number(r.p21||0)+Number(r.p22||0)+Number(r.p23||0),bayar=Math.max(0,Number(r.jumlah||0)-pot);['jumlah','negosiasi','ppn','p21','p22','p23'].forEach(k=>tot[k]+=Number(r[k]||0));tot.pot+=pot;tot.bayar+=bayar;return `<tr><td>${i+1}</td><td>${esc(r.kode)}</td><td>${esc(r.uraian)}</td><td>${esc(r.penerima)}</td><td>${esc(r.bank)}</td><td>${esc(r.rek)}</td><td class="right">${Number(r.jumlah||0).toLocaleString('id-ID')}</td><td class="right">${Number(r.negosiasi||0).toLocaleString('id-ID')}</td><td class="right">${Number(r.ppn||0).toLocaleString('id-ID')}</td><td class="right">${Number(r.p21||0).toLocaleString('id-ID')}</td><td class="right">${Number(r.p22||0).toLocaleString('id-ID')}</td><td class="right">${Number(r.p23||0).toLocaleString('id-ID')}</td><td class="right">${pot.toLocaleString('id-ID')}</td><td class="right">${bayar.toLocaleString('id-ID')}</td></tr>`}).join('');
+        const total=`<tr class="total"><td colspan="6" class="right">TOTAL TRANSAKSI</td><td class="right">${tot.jumlah.toLocaleString('id-ID')}</td><td class="right">${tot.negosiasi.toLocaleString('id-ID')}</td><td class="right">${tot.ppn.toLocaleString('id-ID')}</td><td class="right">${tot.p21.toLocaleString('id-ID')}</td><td class="right">${tot.p22.toLocaleString('id-ID')}</td><td class="right">${tot.p23.toLocaleString('id-ID')}</td><td class="right">${tot.pot.toLocaleString('id-ID')}</td><td class="right">${tot.bayar.toLocaleString('id-ID')}</td></tr>`;
+        const title=`<h3>LAMPIRAN PERMINTAAN PEMBAYARAN NON TUNAI</h3><p class="meta">Transaksi ${j+1} dari ${list.length} | Nomor S.I: <b>${esc(d.siNo||'-')}</b> | Tanggal: <b>${esc(d.tanggal||'-')}</b></p><p>Program: ${esc(d.program||'-')} | Kegiatan: ${esc(d.kegiatan||'-')} | Sub Kegiatan: ${esc(d.subkegiatan||'-')}</p>`;
+        return `<section style="page-break-after:always">${title}<table><thead><tr><th>No</th><th>Kode Rekening</th><th>Uraian</th><th>Penerima</th><th>Bank</th><th>Rekening</th><th>Jumlah</th><th>Negosiasi</th><th>PPN</th><th>PPh21</th><th>PPh22</th><th>PPh23</th><th>Potongan</th><th>Dibayarkan</th></tr></thead><tbody>${rows}${total}</tbody></table>${monthlySignatures(d.pptk||activeSI?.pptk||'')}</section>`;
+      }).join('');
+      printMonthlyReport('LAMPIRAN S.I PER TRANSAKSI',month,pages,'');
     }
+    function npdDatabase(){try{const v=JSON.parse(localStorage.getItem('npd_database_v1')||'[]');return Array.isArray(v)?v:[]}catch(e){return []}}
     function saveMonthlyNPDSnapshot(){
       const month=document.getElementById('npd-bulan-pelaporan')?.value||(document.getElementById('npd-tanggal')?.value||'').slice(0,7);
-      const item={id:Date.now(),month,nomor:document.getElementById('npd-nomor')?.value||'',tanggal:document.getElementById('npd-tanggal')?.value||'',jenis:document.querySelector('input[name="npd-jenis"]:checked')?.value||'',pptk:document.getElementById('npd-pptk')?.value||'',program:document.getElementById('npd-program')?.value||'',kegiatan:document.getElementById('npd-kegiatan')?.value||'',subkegiatan:document.getElementById('npd-subkegiatan')?.value||'',rows:JSON.parse(JSON.stringify(npdRows||[]))};
-      let arr=[];try{arr=JSON.parse(localStorage.getItem('npd_database_v1')||'[]')}catch(e){};arr=Array.isArray(arr)?arr:[];arr=arr.filter(x=>!(x.nomor===item.nomor&&x.month===item.month));arr.unshift(item);localStorage.setItem('npd_database_v1',JSON.stringify(arr));return item;
+      const nomor=document.getElementById('npd-nomor')?.value||'';
+      const pptk=document.getElementById('npd-pptk')?.value||'';
+      const pobj=(masterPejabat||[]).find(x=>x.nama===pptk)||{};
+      const item={id:'npd-'+Date.now()+'-'+Math.random().toString(36).slice(2,8),month,nomor,tanggal:document.getElementById('npd-tanggal')?.value||'',jenis:document.querySelector('input[name="npd-jenis"]:checked')?.value||'',pptk,pptkNip:pobj.nip||'',program:document.getElementById('npd-program')?.value||'',kegiatan:document.getElementById('npd-kegiatan')?.value||'',subkegiatan:document.getElementById('npd-subkegiatan')?.value||'',dpa:document.getElementById('npd-dpa')?.value||'',tahun:document.getElementById('npd-tahun')?.value||'2026',pa:penggunaAnggaran?.nama||'-',paNip:penggunaAnggaran?.nip||'-',rows:JSON.parse(JSON.stringify(npdRows||[]))};
+      let arr=npdDatabase();
+      if(nomor.trim()) arr=arr.filter(x=>!(x.nomor===nomor&&x.month===month));
+      arr.unshift(item);localStorage.setItem('npd_database_v1',JSON.stringify(arr));
+      initMonthlySelectors();const recapMonth=document.getElementById('npd-bulan-rekap');if(recapMonth&&[...recapMonth.options].some(o=>o.value===month))recapMonth.value=month;renderMonthlyNPDTransactions();return item;
     }
-    function getMonthlyNPD(month){try{return JSON.parse(localStorage.getItem('npd_database_v1')||'[]').filter(x=>x.month===month)}catch(e){return []}}
-    function printMonthlyNPD(month){
-      const list=getMonthlyNPD(month);if(!list.length){alert('Belum ada NPD yang disimpan melalui tombol Simpan & Pratinjau NPD untuk bulan '+monthLabel(month)+'.');return;}
-      let body='',i=1,total=0;list.slice().reverse().forEach((d,j)=>{body+=`<tr><td colspan="6"><b>NPD ${j+1}</b> — ${esc(d.nomor)} | ${esc(d.tanggal)} | ${esc(d.subkegiatan)} | PPTK: ${esc(d.pptk)}</td></tr>`;(d.rows||[]).filter(r=>r.jenis==='detail').forEach(r=>{const kini=Number(r.kini||0);total+=kini;body+=`<tr><td>${i++}</td><td>${esc(r.kode)}</td><td>${esc(r.uraian)}</td><td class="right">${Number(r.anggaran||0).toLocaleString('id-ID')}</td><td class="right">${Number(r.lalu||0).toLocaleString('id-ID')}</td><td class="right">${kini.toLocaleString('id-ID')}</td></tr>`})});
-      body+=`<tr class="total"><td colspan="5" class="right">TOTAL PENCairan BULANAN</td><td class="right">${total.toLocaleString('id-ID')}</td></tr>`;
-      printMonthlyReport('REKAP NOTA PENCAIRAN DANA (NPD)',month,`<table><thead><tr><th>No</th><th>Kode Rekening</th><th>Uraian</th><th>Anggaran (Rp)</th><th>Bulan Lalu (Rp)</th><th>Bulan Ini (Rp)</th></tr></thead><tbody>${body}</tbody></table>`,monthlySignatures(list[list.length-1]?.pptk||''));
+    function getMonthlyNPD(month){return npdDatabase().filter(x=>x.month===month).sort((a,b)=>(a.tanggal||'').localeCompare(b.tanggal||''))}
+    function renderMonthlyNPDTransactions(){
+      const box=document.getElementById('npd-monthly-transactions');if(!box)return;
+      const month=document.getElementById('npd-bulan-rekap')?.value||'';const list=getMonthlyNPD(month);
+      box.innerHTML=list.length?`<div class="font-bold text-slate-800 mb-2">Transaksi NPD — ${esc(monthLabel(month))} (${list.length})</div><div class="overflow-x-auto"><table class="w-full text-xs"><thead><tr><th class="p-2 text-left">Nomor NPD</th><th class="p-2 text-left">Tanggal</th><th class="p-2 text-left">Sub Kegiatan</th><th class="p-2 text-left">PPTK</th><th class="p-2 text-right">Aksi</th></tr></thead><tbody>${list.map(d=>`<tr class="border-t"><td class="p-2">${esc(d.nomor||'-')}</td><td class="p-2">${esc(d.tanggal||'-')}</td><td class="p-2">${esc(d.subkegiatan||'-')}</td><td class="p-2">${esc(d.pptk||'-')}</td><td class="p-2 text-right"><button onclick="printOneNPD('${String(d.id).replace(/'/g,'\\\'')}')" class="px-2 py-1 bg-emerald-100 text-emerald-800 rounded">Lihat/Cetak</button> <button onclick="deleteNPDRecord('${String(d.id).replace(/'/g,'\\\'')}')" class="px-2 py-1 bg-rose-100 text-rose-700 rounded">Hapus</button></td></tr>`).join('')}</tbody></table></div>`:'<div class="text-xs text-slate-500 py-2">Belum ada transaksi NPD tersimpan pada bulan ini. Simpan melalui tombol “Simpan & Pratinjau NPD”.</div>';
     }
-    function printMonthlyKK(month){
-      const list=getMonthlyNPD(month);if(!list.length){alert('Belum ada data NPD tersimpan untuk Kartu Kendali bulan '+monthLabel(month)+'.');return;}
-      const agg=new Map();let pagu=0,lalu=0,kini=0;list.forEach(d=>(d.rows||[]).filter(r=>r.jenis==='detail').forEach(r=>{const k=(r.kode||'')+'|'+(r.uraian||'');if(!agg.has(k))agg.set(k,{kode:r.kode||'',uraian:r.uraian||'',anggaran:Number(r.anggaran||0),lalu:0,kini:0});const a=agg.get(k);a.anggaran=Math.max(a.anggaran,Number(r.anggaran||0));a.lalu=Math.max(a.lalu,Number(r.lalu||0));a.kini+=Number(r.kini||0)}));
-      let i=1,body='';agg.forEach(r=>{pagu+=r.anggaran;lalu+=r.lalu;kini+=r.kini;body+=`<tr><td>${i++}</td><td>${esc(r.kode)}</td><td>${esc(r.uraian)}</td><td class="right">${r.anggaran.toLocaleString('id-ID')}</td><td class="right">${r.lalu.toLocaleString('id-ID')}</td><td class="right">${r.kini.toLocaleString('id-ID')}</td><td class="right">${(r.lalu+r.kini).toLocaleString('id-ID')}</td><td class="right">${Math.max(0,r.anggaran-r.lalu-r.kini).toLocaleString('id-ID')}</td></tr>`});
-      body+=`<tr class="total"><td colspan="3" class="right">TOTAL</td><td class="right">${pagu.toLocaleString('id-ID')}</td><td class="right">${lalu.toLocaleString('id-ID')}</td><td class="right">${kini.toLocaleString('id-ID')}</td><td class="right">${(lalu+kini).toLocaleString('id-ID')}</td><td class="right">${Math.max(0,pagu-lalu-kini).toLocaleString('id-ID')}</td></tr>`;
-      printMonthlyReport('KARTU KENDALI KEGIATAN - REKAP BULANAN',month,`<table><thead><tr><th>No</th><th>Kode Rekening</th><th>Uraian</th><th>Pagu</th><th>Bulan Lalu</th><th>Bulan Ini</th><th>Kumulatif</th><th>Sisa</th></tr></thead><tbody>${body}</tbody></table>`,monthlySignatures(list[list.length-1]?.pptk||''));
+    function deleteNPDRecord(id){if(!confirm('Hapus transaksi NPD ini?'))return;localStorage.setItem('npd_database_v1',JSON.stringify(npdDatabase().filter(x=>x.id!==id)));initMonthlySelectors();renderMonthlyNPDTransactions();}
+    function npdRecordHtml(d){
+      const dt=d.tanggal?new Date(d.tanggal+'T00:00:00').toLocaleDateString('id-ID',{day:'2-digit',month:'long',year:'numeric'}):'-';
+      const rows=(d.rows||[]).map((r,i)=>{const s=Math.max(0,Number(r.anggaran||0)-Number(r.lalu||0)-Number(r.kini||0));const showKode=i===0||(d.rows||[])[i-1]?.jenis==='header'||((d.rows||[])[i-1]?.kode||'')!==r.kode;return `<tr class="${r.jenis==='header'?'bold':''}"><td class="center">${i+1}</td><td>${esc(r.kode||'')}</td><td>${esc(r.uraian||'')}</td><td class="right">${Number(r.anggaran||0).toLocaleString('id-ID')}</td><td class="right">${Number(r.lalu||0).toLocaleString('id-ID')}</td><td class="right">${Number(r.kini||0).toLocaleString('id-ID')}</td><td class="right">${s.toLocaleString('id-ID')}</td></tr>`}).join('');
+      const root=(d.rows||[]).find(r=>r.kode==='5.1'&&r.jenis==='header')||(d.rows||[])[0]||{};const totals={a:Number(root.anggaran||0),l:Number(root.lalu||0),k:Number(root.kini||0)};
+      return `<section class="npd-page"><div class="center bold">SKPD SEKRETARIAT DAERAH</div><div class="center bold">PERENCANAAN, KEUANGAN DAN PELAPORAN</div><div class="center bold title">NOTA PENCAIRAN DANA (NPD)</div><table class="identity"><tr><td>Nomor</td><td>:</td><td><b>${esc(d.nomor||'-')}</b></td></tr><tr><td>Tanggal</td><td>:</td><td><b>${esc(dt)}</b></td></tr><tr><td>Jenis NPD</td><td>:</td><td>${d.jenis==='Panjar'?'(  X  ) Panjar':'(     ) Panjar'}<br>${d.jenis==='Tanpa Panjar'?'(  X  ) Tanpa Panjar':'(     ) Tanpa Panjar'}</td></tr><tr><td>PPTK</td><td>:</td><td><b>${esc(d.pptk||'-')}</b></td></tr><tr><td>Program</td><td>:</td><td><b>${esc(d.program||'-')}</b></td></tr><tr><td>Kegiatan</td><td>:</td><td><b>${esc(d.kegiatan||'-')}</b></td></tr><tr><td>Sub Kegiatan</td><td>:</td><td><b>${esc(d.subkegiatan||'-')}</b></td></tr><tr><td>No DPA</td><td>:</td><td><b>${esc(d.dpa||'-')}</b></td></tr><tr><td>Tahun Anggaran</td><td>:</td><td><b>${esc(d.tahun||'2026')}</b></td></tr></table><p><b>Rincian Belanja ;</b></p><table><thead><tr><th>No</th><th>Kode Rekening</th><th>Uraian</th><th>Anggaran</th><th>Pencairan s.d Bulan Lalu</th><th>Pencairan Saat ini</th><th>Sisa Anggaran</th></tr></thead><tbody>${rows}</tbody><tfoot><tr class="bold"><td colspan="3" class="right">TOTAL</td><td class="right">Rp ${totals.a.toLocaleString('id-ID')}</td><td class="right">Rp ${totals.l.toLocaleString('id-ID')}</td><td class="right">Rp ${totals.k.toLocaleString('id-ID')}</td><td class="right">Rp ${Math.max(0,totals.a-totals.l-totals.k).toLocaleString('id-ID')}</td></tr></tfoot></table><div class="sign"><div><b>Kuasa Pengguna Anggaran</b><div class="space"></div><b><u>${esc(d.pa||penggunaAnggaran?.nama||'-')}</u></b><br>NIP. ${esc(d.paNip||penggunaAnggaran?.nip||'-')}</div><div><b>Pejabat Pelaksana Teknis Kegiatan</b><div class="space"></div><b><u>${esc(d.pptk||'-')}</u></b><br>NIP. ${esc(d.pptkNip||'-')}</div></div></section>`;
     }
+    function printNPDArchivePages(list,month){if(!list||!list.length){alert('Belum ada transaksi NPD tersimpan untuk bulan '+monthLabel(month)+'.');return;}const w=window.open('','_blank');if(!w){alert('Izinkan pop-up browser untuk mencetak NPD.');return;}const content=list.map((d,i)=>npdRecordHtml(d)+(i<list.length-1?'<div style="page-break-after:always"></div>':'')).join('');w.document.write(`<!doctype html><html lang="id"><head><meta charset="utf-8"><title>NPD ${monthLabel(month)}</title><style>@page{size:A4 portrait;margin:12mm}body{font-family:Arial,sans-serif;font-size:11px;color:#111;margin:0}.center{text-align:center}.bold{font-weight:bold}.title{font-size:14px;margin-top:4px}.identity{margin:24px 0 18px;width:100%;border-collapse:collapse}.identity td{padding:3px 5px;vertical-align:top}.identity td:first-child{width:120px}.identity td:nth-child(2){width:12px}table:not(.identity){width:100%;border-collapse:collapse}th,td{border:1px solid #111;padding:4px;vertical-align:top}th{text-align:center}.identity td{border:0}.right{text-align:right}.npd-page{page-break-inside:avoid}.sign{display:flex;justify-content:space-around;gap:35px;margin-top:55px;text-align:center;page-break-inside:avoid}.sign>div{width:45%}.space{height:68px}.bold td{font-weight:bold}p{margin:10px 0 5px}@media print{.npd-page{break-after:page}.npd-page:last-child{break-after:auto}}</style></head><body>${content}<script>window.onload=()=>setTimeout(()=>window.print(),300)<\/script></body></html>`);w.document.close();}
+    function printOneNPD(id){const d=npdDatabase().find(x=>x.id===id);if(!d)return alert('Transaksi NPD tidak ditemukan.');printNPDArchivePages([d],d.month);}
+    function printMonthlyNPD(month){const list=getMonthlyNPD(month);if(!list.length){alert('Belum ada transaksi NPD tersimpan untuk bulan '+monthLabel(month)+'.');return;}printNPDArchivePages(list,month);}
+    function kkDatabase(){try{const v=JSON.parse(localStorage.getItem('kk_database_v1')||'[]');return Array.isArray(v)?v:[]}catch(e){return []}}
+    function renderMonthlyKKTransactions(){const box=document.getElementById('kk-monthly-transactions');if(!box)return;const month=document.getElementById('kk-bulan-rekap')?.value||'';const list=kkDatabase().filter(x=>x.month===month);box.innerHTML=list.length?`<div class="font-bold text-slate-800 mb-2">Kartu Kendali — ${esc(monthLabel(month))} (${list.length})</div>${list.map((x,i)=>`<div class="flex flex-wrap justify-between gap-2 border-t py-2 text-xs"><span>${i+1}. ${esc(x.subkegiatan||'-')} — ${esc(x.tanggal||'-')} — ${esc(x.pptk||'-')}</span><span><button onclick="printOneKK('${String(x.id).replace(/'/g,'\\\'')}')" class="px-2 py-1 bg-emerald-100 text-emerald-800 rounded">Lihat/Cetak</button> <button onclick="deleteKKRecord('${String(x.id).replace(/'/g,'\\\'')}')" class="px-2 py-1 bg-rose-100 text-rose-700 rounded">Hapus</button></span></div>`).join('')}`:'<div class="text-xs text-slate-500 py-2">Belum ada Kartu Kendali tersimpan pada bulan ini. Klik “Simpan Kartu Kendali” setelah memastikan datanya benar.</div>';}
+    function deleteKKRecord(id){if(!confirm('Hapus Kartu Kendali ini?'))return;localStorage.setItem('kk_database_v1',JSON.stringify(kkDatabase().filter(x=>x.id!==id)));initMonthlySelectors();renderMonthlyKKTransactions();}
+    function saveKKSnapshot(){kkRefreshPreview();const month=kkCurrentMonth(),nomor=document.getElementById('npd-nomor')?.value||'',subkegiatan=document.getElementById('npd-subkegiatan')?.value||'';const item={id:'kk-'+Date.now()+'-'+Math.random().toString(36).slice(2,8),month,tanggal:document.getElementById('npd-tanggal')?.value||'',nomor,pptk:document.getElementById('npd-pptk')?.value||'',program:document.getElementById('npd-program')?.value||'',kegiatan:document.getElementById('npd-kegiatan')?.value||'',subkegiatan,html:document.getElementById('kk-print-area')?.innerHTML||''};let arr=kkDatabase();if(nomor.trim())arr=arr.filter(x=>!(x.month===month&&x.nomor===nomor&&x.subkegiatan===subkegiatan));arr.unshift(item);localStorage.setItem('kk_database_v1',JSON.stringify(arr));initMonthlySelectors();const recapMonth=document.getElementById('kk-bulan-rekap');if(recapMonth&&[...recapMonth.options].some(o=>o.value===month))recapMonth.value=month;renderMonthlyKKTransactions();return item;}
+    function printOneKK(id){const d=kkDatabase().find(x=>x.id===id);if(!d)return alert('Kartu Kendali tidak ditemukan.');printMonthlyReport('KARTU KENDALI KEGIATAN',d.month,d.html||'', '');}
+    function printMonthlyKK(month){const list=kkDatabase().filter(x=>x.month===month);if(!list.length){alert('Belum ada Kartu Kendali tersimpan untuk bulan '+monthLabel(month)+'. Klik Simpan Kartu Kendali pada setiap transaksi.');return;}const content=list.map((d,i)=>`<section style="page-break-after:always"><div class="center bold">KARTU KENDALI ${i+1} dari ${list.length} — ${esc(d.subkegiatan||'')}</div>${d.html||''}</section>`).join('');printMonthlyReport('KARTU KENDALI PER BULAN',month,content,'');}
 
     function getSISettingData() {
       // Satu sumber relasi untuk S.I, Lampiran, dan NPD.
@@ -1506,6 +1532,7 @@
 
       databasePengajuan.unshift(dataBaru);
       localStorage.setItem('si_database', JSON.stringify(databasePengajuan));
+      initMonthlySelectors();
       updateSIBulanDanNomor();
       
       renderTable();
@@ -1676,7 +1703,8 @@
       if(tab==='lampiran') { loadSIData(); renderRows(); renderLampiranMaster(); }
       if(tab==='npd') { npdSyncFromLatestSI(); }
       if(tab==='npd') { npdInit(); npdRefreshPreview(); }
-      if(tab==='kk') { npdInit(); kkRefreshPreview(); }
+      if(tab==='kk') { npdInit(); kkRefreshPreview(); renderMonthlyKKTransactions(); }
+      if(tab==='npd') renderMonthlyNPDTransactions();
       if(tab==='database') { renderTable(); initMonthlySelectors(); }
       if(['lampiran','npd','kk'].includes(tab)) initMonthlySelectors();
     }
@@ -1962,6 +1990,8 @@ function npdBulanPelaporan(){
 
 function npdBulanPelaporanChanged(){
   const month=npdBulanPelaporan();
+  const rekapEl=document.getElementById('npd-bulan-rekap');
+  if(rekapEl && [...rekapEl.options].some(o=>o.value===month)) rekapEl.value=month;
   const kkEl=document.getElementById('kk-bulan-pelaporan');
   if(kkEl && kkEl.value!==month) kkEl.value=month;
   try{localStorage.setItem('npd_bulan_pelaporan_v1',month);localStorage.setItem('kk_bulan_pelaporan_v1',month)}catch(e){}
@@ -1969,6 +1999,7 @@ function npdBulanPelaporanChanged(){
   npdRenderRows();
   npdRefreshPreview();
   if(typeof kkRefreshPreview==='function') kkRefreshPreview();
+  if(typeof renderMonthlyNPDTransactions==='function') renderMonthlyNPDTransactions();
 }
 
 function syncNPDFromLampiran(){
@@ -2232,8 +2263,8 @@ function saveAndPreview(){
  if(!activeSI){alert('Belum ada Pengajuan S.I. Silakan buat Pengajuan S.I terlebih dahulu.');return;}
  if(!document.getElementById('subkegiatan').value){alert('Sub Kegiatan dari Pengajuan S.I belum tersedia.');return;}
  const t=calcTotals();
- const data={id:Date.now(),siId:activeSI.id,siNo:activeSI.noSurat||'',tanggal:document.getElementById('tanggal').value,bulan:document.getElementById('bulan').value,program:document.getElementById('program').value,kegiatan:document.getElementById('kegiatan').value,subkegiatan:document.getElementById('subkegiatan').value,rows:JSON.parse(JSON.stringify(rows)),totals:t};
- db.unshift(data);localStorage.setItem(DB_KEY,JSON.stringify(db));
+ const data={id:'lampiran-'+Date.now()+'-'+Math.random().toString(36).slice(2,8),siId:activeSI.id,siNo:activeSI.noSurat||'',pptk:activeSI.pptk||'',pptkNip:activeSI.nip||'',pa:penggunaAnggaran?.nama||'-',paNip:penggunaAnggaran?.nip||'-',tanggal:document.getElementById('tanggal').value,bulan:document.getElementById('bulan').value,program:document.getElementById('program').value,kegiatan:document.getElementById('kegiatan').value,subkegiatan:document.getElementById('subkegiatan').value,rows:JSON.parse(JSON.stringify(rows)),totals:t};
+ db.unshift(data);localStorage.setItem(DB_KEY,JSON.stringify(db));initMonthlySelectors();renderLampiranDatabase();
  preview(data);switchTab('lampiran-preview');
 }
 function renderLampiranSignatures(){
@@ -2644,14 +2675,14 @@ function kkRefreshPreview(){
   f('kk-pa',pa); f('kk-pa-nip',panip); f('kk-pptk',pptk); f('kk-pptk-nip',pptknip);
 }
 function printKK(){
-  kkRefreshPreview();
+  saveKKSnapshot();
   clearPrintModes();
   document.body.classList.add('print-kk');
   window.print();
   setTimeout(clearPrintModes,500);
 }
 
-function npdPreview(){const bad=npdRows.some(r=>r.jenis!=='header'&&npdNum(r.lalu)+npdNum(r.kini)>npdNum(r.anggaran));if(bad){alert('Pencairan melebihi pagu anggaran dasar DPA. Periksa nilai yang berwarna merah.');return;}saveMonthlyNPDSnapshot();initMonthlySelectors();npdRefreshPreview();document.getElementById('npd-print-wrap')?.scrollIntoView({behavior:'smooth',block:'start'})}
+function npdPreview(){const bad=npdRows.some(r=>r.jenis!=='header'&&npdNum(r.lalu)+npdNum(r.kini)>npdNum(r.anggaran));if(bad){alert('Pencairan melebihi pagu anggaran dasar DPA. Periksa nilai yang berwarna merah.');return;}npdRefreshPreview();saveMonthlyNPDSnapshot();document.getElementById('npd-print-wrap')?.scrollIntoView({behavior:'smooth',block:'start'})}
 function printNPD(){
   npdRefreshPreview();
   clearPrintModes();
