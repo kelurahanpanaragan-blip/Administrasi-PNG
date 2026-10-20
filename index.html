@@ -198,10 +198,28 @@
           document.body.classList.add('app-authenticated');
           location.reload();
         } catch (error) {
-          console.error('[Firebase Auth]', error);
-          err.textContent = (error && error.code === 'auth/too-many-requests')
-            ? 'Terlalu banyak percobaan. Coba lagi beberapa saat.'
-            : 'Login gagal. Periksa username dan password Firebase Anda.';
+          console.error('[Firebase Auth/Login]', error);
+          const code = error && error.code ? String(error.code) : '';
+          const message = error && error.message ? String(error.message) : '';
+          if (code === 'auth/too-many-requests') {
+            err.textContent = 'Terlalu banyak percobaan login. Tunggu beberapa saat sebelum mencoba lagi.';
+          } else if (code === 'auth/invalid-credential' || code === 'auth/wrong-password' || code === 'auth/user-not-found') {
+            err.textContent = 'Email akun Firebase atau password tidak cocok. Username aplikasi benar, tetapi login memakai akun Firebase kelurahanpanaragan@gmail.com.';
+          } else if (code === 'auth/invalid-email') {
+            err.textContent = 'Format email akun Firebase yang digunakan aplikasi tidak valid. Periksa konfigurasi LOGIN_EMAIL.';
+          } else if (code === 'auth/network-request-failed') {
+            err.textContent = 'Tidak dapat terhubung ke Firebase Authentication. Periksa internet, pemblokir jaringan, lalu coba lagi.';
+          } else if (code === 'auth/operation-not-allowed') {
+            err.textContent = 'Metode Email/Password belum diaktifkan di Firebase Authentication.';
+          } else if (code === 'auth/unauthorized-domain') {
+            err.textContent = 'Domain aplikasi belum diizinkan di Firebase Authentication. Tambahkan domain GitHub Pages pada Authorized domains.';
+          } else if (code.indexOf('app/database-load-failed') === 0 || /Realtime Database HTTP (401|403)/.test(message)) {
+            err.textContent = 'Login Firebase berhasil, tetapi akses Realtime Database ditolak. Periksa Database URL dan Rules Firebase Realtime Database.';
+          } else if (/lebih dari 12 detik|Koneksi Firebase terlalu lama/i.test(message)) {
+            err.textContent = 'Login mungkin berhasil, tetapi Firebase terlalu lama merespons. Periksa koneksi dan Database Rules, lalu muat ulang halaman.';
+          } else {
+            err.textContent = 'Login gagal' + (code ? ' (' + code + ')' : '') + (message ? ': ' + message : '. Periksa konfigurasi Firebase.');
+          }
           err.style.display = 'block';
           document.getElementById('login-password').select();
         } finally { if(submit) { submit.disabled = false; submit.style.opacity = ''; } }
@@ -1227,9 +1245,16 @@
     window.firebaseSecureLogin = async function(password) {
       if (document.getElementById('login-username').value.trim() !== LOGIN_USER) throw new Error('Username tidak valid');
       await auth.signInWithEmailAndPassword(LOGIN_EMAIL, password);
-      await loadRemote();
-      await syncLocalKeysMissingRemotely();
-      startRealtime();
+      try {
+        await loadRemote();
+        await syncLocalKeysMissingRemotely();
+        startRealtime();
+      } catch (error) {
+        console.error('[Firebase Database setelah autentikasi berhasil]', error);
+        const dbError = new Error(error && error.message ? error.message : 'Akses Realtime Database gagal setelah login.');
+        dbError.code = 'app/database-load-failed';
+        throw dbError;
+      }
     };
     window.firebaseSecureLogout = async function() {
       if (stream) { stream.close(); stream = null; }
