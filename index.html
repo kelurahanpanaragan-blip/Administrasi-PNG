@@ -182,50 +182,31 @@
         const pw = document.getElementById('login-password').value || '';
         const err = document.getElementById('login-error');
         const submit = document.querySelector('#login-form button[type="submit"]');
-        
         if (u !== LOGIN_USER) {
-          err.textContent = 'Username atau password salah.'; 
-          err.style.display = 'block';
-          document.getElementById('login-password').select(); 
-          return false;
+          err.textContent = 'Username atau password salah.'; err.style.display = 'block';
+          document.getElementById('login-password').select(); return false;
         }
-
+        if (!window.firebaseSecureLogin) {
+          err.textContent = 'Layanan autentikasi belum siap. Periksa koneksi internet lalu muat ulang halaman.';
+          err.style.display = 'block'; return false;
+        }
         if(submit) { submit.disabled = true; submit.style.opacity = '.7'; }
         err.style.display = 'none';
-
-        // Tunggu hingga layanan Firebase siap (maksimal 3 detik)
-        let waitCount = 0;
-        while (!window.firebaseSecureLogin && waitCount < 10) {
-          await new Promise(r => setTimeout(r, 300));
-          waitCount++;
-        }
-
-        if (window.firebaseSecureLogin) {
-          try {
-            await window.firebaseSecureLogin(pw);
-            document.getElementById('login-password').value = '';
-            document.body.classList.add('app-authenticated');
-            location.reload();
-            return false;
-          } catch (error) {
-            console.error('[Firebase Auth]', error);
-            err.textContent = (error && error.code === 'auth/too-many-requests')
-              ? 'Terlalu banyak percobaan. Coba lagi beberapa saat.'
-              : 'Password salah atau akun Firebase tidak cocok.';
-            err.style.display = 'block';
-            document.getElementById('login-password').select();
-            if(submit) { submit.disabled = false; submit.style.opacity = ''; }
-            return false;
-          }
-        } 
-
-        // Fallback jika Firebase belum siap / offline
-        console.warn('[Auth Warning] Masuk dalam mode lokal.');
-        document.body.classList.add('app-authenticated');
-        if(submit) { submit.disabled = false; submit.style.opacity = ''; }
+        try {
+          await window.firebaseSecureLogin(pw);
+          document.getElementById('login-password').value = '';
+          document.body.classList.add('app-authenticated');
+          location.reload();
+        } catch (error) {
+          console.error('[Firebase Auth]', error);
+          err.textContent = (error && error.code === 'auth/too-many-requests')
+            ? 'Terlalu banyak percobaan. Coba lagi beberapa saat.'
+            : 'Login gagal. Periksa username dan password Firebase Anda.';
+          err.style.display = 'block';
+          document.getElementById('login-password').select();
+        } finally { if(submit) { submit.disabled = false; submit.style.opacity = ''; } }
         return false;
       };
-
       window.handleAppLogout = async function(){
         try { if(window.firebaseSecureLogout) await window.firebaseSecureLogout(); }
         catch(error) { console.error('[Firebase Auth] Logout gagal:', error); }
@@ -237,7 +218,6 @@
         if(err) { err.textContent = 'Username atau password salah.'; err.style.display = 'none'; }
         setTimeout(function(){ if(u) u.focus(); }, 100);
       };
-
       document.addEventListener('DOMContentLoaded', function(){
         const toggle = document.getElementById('toggle-login-password');
         const pass = document.getElementById('login-password');
@@ -303,4 +283,2456 @@
             <h2 class="text-2xl font-black text-slate-900 tracking-tight"><i class="fa-solid fa-pen-to-square text-teal-600 mr-2.5"></i>Formulir Pengajuan Standing Instruction</h2>
             <p class="text-sm text-slate-500 mt-1">Isi formulir berikut untuk membuat lembar Standing Instruction (FORM F4) secara otomatis.</p>
           </div>
-          <span class="text-xs font-bold px-4 py-1.5 bg-gradient-to-r from-emerald-500
+          <span class="text-xs font-bold px-4 py-1.5 bg-gradient-to-r from-emerald-500 to-teal-500 text-white rounded-full shadow-sm">Mode Input Otomatis</span>
+        </div>
+
+        <form id="form-pengajuan" onsubmit="handleFormSubmit(event)" class="space-y-6">
+          <div class="grid grid-cols-1 md:grid-cols-3 gap-6">
+            
+            <div>
+              <label class="block text-xs font-bold uppercase tracking-wider text-slate-600 mb-2">Tanggal Pengajuan <span class="text-red-500">*</span></label>
+              <input type="date" id="input-tanggal" required onchange="updateSIBulanDanNomor()" class="w-full px-4 py-3 rounded-xl border border-slate-200 bg-slate-50/50 focus:bg-white focus:ring-2 focus:ring-teal-500 focus:border-teal-500 outline-none transition text-sm font-medium">
+            </div>
+
+            <div>
+              <label class="block text-xs font-bold uppercase tracking-wider text-slate-600 mb-2">Nomor Urut Surat <span class="text-red-500">*</span></label>
+              <div class="flex items-center shadow-sm rounded-xl overflow-hidden border border-slate-200 focus-within:ring-2 focus-within:ring-teal-500">
+                <input type="text" id="input-no-urut" placeholder="Otomatis" required readonly title="Nomor urut dibuat otomatis agar tidak ganda" class="w-24 px-4 py-3 border-0 bg-slate-50/50 focus:bg-white outline-none transition text-sm font-bold text-teal-900">
+                <span class="bg-gradient-to-r from-slate-100 to-teal-50 text-slate-600 px-3 py-3 border-l border-slate-200 text-xs font-mono font-medium">/7.01.2.13.0.00.35.0010/SI/PNG/2026</span>
+              </div>
+            </div>
+
+            <div>
+              <label class="block text-xs font-bold uppercase tracking-wider text-slate-600 mb-2">Bulan Pengajuan S.I</label>
+              <input type="month" id="input-bulan-si" readonly class="w-full px-4 py-3 rounded-xl border border-slate-200 bg-slate-100 text-sm font-bold text-teal-900">
+            </div>
+
+            <div>
+              <label class="block text-xs font-bold uppercase tracking-wider text-slate-600 mb-2">PPTK / Pejabat Penanggung Jawab <span class="text-red-500">*</span></label>
+              <select id="input-pptk" onchange="updateNipPreview()" required class="w-full px-4 py-3 rounded-xl border border-slate-200 bg-slate-50/50 focus:bg-white focus:ring-2 focus:ring-teal-500 focus:border-teal-500 outline-none transition text-sm font-medium">
+                <!-- Populated via JS -->
+              </select>
+              <p id="preview-nip" class="text-xs text-teal-700 mt-2 font-mono font-semibold">NIP: -</p>
+            </div>
+
+          </div>
+
+          <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+            <div>
+              <label class="block text-xs font-bold uppercase tracking-wider text-slate-600 mb-2">Kegiatan <span class="text-red-500">*</span></label>
+              <select id="input-kegiatan" required class="w-full px-4 py-3 rounded-xl border border-slate-200 bg-slate-50/50 focus:bg-white focus:ring-2 focus:ring-teal-500 focus:border-teal-500 outline-none transition text-sm font-medium">
+                <!-- Populated via JS -->
+              </select>
+            </div>
+
+            <div>
+              <label class="block text-xs font-bold uppercase tracking-wider text-slate-600 mb-2">Sub Kegiatan <span class="text-red-500">*</span></label>
+              <select id="input-subkegiatan" required class="w-full px-4 py-3 rounded-xl border border-slate-200 bg-slate-50/50 focus:bg-white focus:ring-2 focus:ring-teal-500 focus:border-teal-500 outline-none transition text-sm font-medium">
+                <!-- Populated via JS -->
+              </select>
+            </div>
+          </div>
+
+          <div class="bg-gradient-to-br from-teal-50/60 to-cyan-50/60 p-6 rounded-2xl border border-teal-100 space-y-5 shadow-inner">
+            <div class="grid grid-cols-1 md:grid-cols-3 gap-6">
+              <div class="md:col-span-1">
+                <label class="block text-xs font-bold uppercase tracking-wider text-teal-900 mb-2">Nominal Transfer (Rp) <span class="text-red-500">*</span></label>
+                <div class="relative">
+                  <span class="absolute inset-y-0 left-0 pl-4 flex items-center text-teal-700 text-sm font-black">Rp</span>
+                  <input type="text" id="input-nominal" oninput="formatRupiahInput(this)" placeholder="0" required class="w-full pl-12 pr-4 py-3 rounded-xl border border-teal-200 bg-white focus:ring-2 focus:ring-teal-500 focus:border-teal-500 outline-none font-black text-teal-950 text-lg shadow-sm">
+                </div>
+              </div>
+
+              <div class="md:col-span-2">
+                <label class="block text-xs font-bold uppercase tracking-wider text-teal-900 mb-2">Terbilang (Otomatis)</label>
+                <div id="text-terbilang" class="w-full px-4 py-3 bg-white/80 rounded-xl border border-teal-200 text-teal-900 font-semibold italic text-sm min-h-[48px] flex items-center shadow-sm">
+                  Satu Juta Rupiah
+                </div>
+              </div>
+            </div>
+
+            <div>
+              <label class="block text-xs font-bold uppercase tracking-wider text-teal-900 mb-2">Keterangan / Keperluan Tambahan</label>
+              <input type="text" id="input-keterangan" placeholder="Contoh: Honorarium & Bahan Cetakan Bulan Oktober 2026" class="w-full px-4 py-3 rounded-xl border border-teal-200 bg-white focus:ring-2 focus:ring-teal-500 focus:border-teal-500 outline-none text-sm font-medium shadow-sm">
+            </div>
+          </div>
+
+          <div class="flex items-center justify-end space-x-3 pt-4">
+            <button type="reset" class="px-6 py-3 rounded-xl border border-slate-300 text-slate-700 hover:bg-slate-100 text-sm font-bold transition shadow-sm">
+              <i class="fa-solid fa-rotate-left mr-1.5"></i> Reset
+            </button>
+            <button type="submit" class="px-7 py-3 rounded-xl bg-gradient-to-r from-emerald-600 via-teal-600 to-cyan-600 hover:from-emerald-700 hover:to-cyan-700 text-white text-sm font-black shadow-lg shadow-teal-600/30 hover:shadow-xl transition flex items-center">
+              <i class="fa-solid fa-print mr-2 text-amber-300"></i> Simpan & Pratinjau
+            </button>
+          </div>
+        </form>
+      </div>
+    </section>
+
+    <!-- TAB 2: FORM LAMPIRAN -->
+<section id="tab-lampiran" class="space-y-6">
+  <div class="bg-white/90 backdrop-blur-xl rounded-3xl shadow-xl shadow-teal-900/5 border border-white p-6 md:p-8">
+    <div class="flex flex-col md:flex-row md:items-center md:justify-between gap-4 border-b border-slate-100 pb-5 mb-6">
+      <div>
+        <h2 class="text-2xl font-black text-slate-900 tracking-tight"><i class="fa-solid fa-file-lines text-teal-600 mr-2.5"></i>Form Lampiran S.I</h2>
+        <p class="text-sm text-slate-500 mt-1">Data Kegiatan, Sub Kegiatan, Tanggal dan Bulan terhubung otomatis dengan Pengajuan S.I terbaru.</p>
+      </div>
+      <div class="flex flex-wrap items-center gap-2 no-print"><select id="lamp-bulan-rekap" class="table-input bg-white font-bold text-teal-800" aria-label="Bulan lampiran"></select><button onclick="printMonthlyLampiran(document.getElementById('lamp-bulan-rekap').value)" class="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-xs font-bold"><i class="fa-solid fa-calendar-days mr-1"></i> Lampiran per Bulan</button></div>
+      <div id="si-linked-box" class="bg-gradient-to-r from-teal-50 to-emerald-50 border border-teal-200/80 rounded-2xl px-5 py-3 text-xs text-slate-700 shadow-sm">
+        <div><b class="text-teal-900">S.I Terhubung:</b> <span id="si-no" class="font-bold text-teal-950">-</span></div>
+        <div class="mt-1"><b class="text-teal-900">PPTK:</b> <span id="si-pptk" class="font-bold text-teal-950">-</span></div>
+      </div>
+    </div>
+
+    <div class="grid grid-cols-1 md:grid-cols-4 gap-4 mb-6">
+      <div class="md:col-span-2">
+        <label class="block text-xs font-bold uppercase tracking-wider text-slate-600 mb-2">Program</label>
+        <input id="program" class="table-input font-medium" value="PROGRAM PENUNJANG URUSAN PEMERINTAHAN DAERAH KABUPATEN/KOTA" readonly>
+      </div>
+      <div class="md:col-span-2">
+        <label class="block text-xs font-bold uppercase tracking-wider text-slate-600 mb-2">Kegiatan</label>
+        <input id="kegiatan" class="table-input bg-slate-100/80 font-medium" placeholder="Otomatis dari Pengajuan S.I" readonly>
+      </div>
+      <div class="md:col-span-3">
+        <label class="block text-xs font-bold uppercase tracking-wider text-slate-600 mb-2">Sub Kegiatan</label>
+        <input id="subkegiatan" class="table-input bg-slate-100/80 font-medium" placeholder="Otomatis dari Pengajuan S.I" readonly>
+      </div>
+      <div>
+        <label class="block text-xs font-bold uppercase tracking-wider text-slate-600 mb-2">Tanggal</label>
+        <input id="tanggal" type="date" class="table-input bg-slate-100/80 font-medium" readonly>
+      </div>
+      <div class="md:col-span-2">
+        <label class="block text-xs font-bold uppercase tracking-wider text-slate-600 mb-2">Bulan</label>
+        <input id="bulan" type="month" class="table-input bg-slate-100/80 font-medium" readonly>
+      </div>
+    </div>
+
+    <div class="flex items-center justify-between mb-4 bg-teal-50/50 p-4 rounded-2xl border border-teal-100">
+      <div>
+        <h3 class="font-black text-teal-950 text-base">Rincian Pembayaran</h3>
+        <p class="text-xs text-teal-800 font-medium mt-0.5">Kode rekening dan uraian kegiatan tersedia berdasarkan Sub Kegiatan pada Setting. Jumlah yang dibayarkan = Jumlah dikurangi Harga Negosiasi dan seluruh pajak/potongan.</p>
+      </div>
+      <button onclick="addRow()" class="px-5 py-2.5 bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-700 hover:to-teal-700 text-white rounded-xl text-sm font-bold shadow-md shadow-teal-600/20 transition flex items-center">
+        <i class="fa-solid fa-plus mr-1.5"></i> Tambah Baris
+      </button>
+    </div>
+
+    <div class="overflow-x-auto rounded-2xl border border-slate-200 shadow-sm bg-white">
+      <table class="min-w-[1450px] w-full text-xs">
+        <thead class="bg-gradient-to-r from-slate-800 to-slate-900 text-white font-semibold">
+          <tr>
+            <th class="p-3 border-b border-slate-700 w-10 text-center">No</th>
+            <th class="p-3 border-b border-slate-700 w-44 text-left">Kode Rekening</th>
+            <th class="p-3 border-b border-slate-700 w-64 text-left">Uraian Kegiatan</th>
+            <th class="p-3 border-b border-slate-700 w-52 text-left">Nama Penerima</th>
+            <th class="p-3 border-b border-slate-700 w-28 text-left">Nama Bank</th>
+            <th class="p-3 border-b border-slate-700 w-40 text-left">Rekening Bank</th>
+            <th class="p-3 border-b border-slate-700 w-36 text-right">Jumlah</th>
+            <th class="p-3 border-b border-slate-700 w-36 text-right">Harga Negosiasi</th>
+            <th class="p-3 border-b border-slate-700 w-28 text-right">PPN</th>
+            <th class="p-3 border-b border-slate-700 w-28 text-right">PPh 21</th>
+            <th class="p-3 border-b border-slate-700 w-28 text-right">PPh 22</th>
+            <th class="p-3 border-b border-slate-700 w-28 text-right">PPh 23</th>
+            <th class="p-3 border-b border-slate-700 w-36 text-right">Potongan</th>
+            <th class="p-3 border-b border-slate-700 w-40 text-right">Dibayarkan</th>
+            <th class="p-3 border-b border-slate-700 w-12 text-center"></th>
+          </tr>
+        </thead>
+        <tbody id="rows" class="divide-y divide-slate-100"></tbody>
+        <tfoot class="bg-slate-100 font-bold text-slate-900">
+          <tr>
+            <td colspan="6" class="p-3.5 text-right uppercase tracking-wider text-slate-700 font-black">TOTAL</td>
+            <td id="total-jumlah" class="p-3.5 text-right font-black">Rp 0</td>
+            <td id="total-negosiasi" class="p-3.5 text-right font-black">Rp 0</td>
+            <td id="total-ppn" class="p-3.5 text-right font-bold">Rp 0</td>
+            <td id="total-p21" class="p-3.5 text-right font-bold">Rp 0</td>
+            <td id="total-p22" class="p-3.5 text-right font-bold">Rp 0</td>
+            <td id="total-p23" class="p-3.5 text-right font-bold">Rp 0</td>
+            <td id="total-potongan" class="p-3.5 text-right font-black">Rp 0</td>
+            <td id="total-dibayar" class="p-3.5 text-right text-emerald-700 font-black text-sm">Rp 0</td>
+            <td></td>
+          </tr>
+        </tfoot>
+      </table>
+    </div>
+
+    <div class="flex justify-end gap-3 pt-6">
+      <button onclick="resetLampiranForm()" class="px-6 py-3 rounded-xl border border-slate-300 text-sm font-bold text-slate-700 hover:bg-slate-100 transition shadow-sm"><i class="fa-solid fa-rotate-left mr-1.5"></i> Reset</button>
+      <button onclick="saveAndPreview()" class="px-7 py-3 rounded-xl bg-gradient-to-r from-emerald-600 via-teal-600 to-cyan-600 hover:from-emerald-700 hover:to-cyan-700 text-white text-sm font-black shadow-lg shadow-teal-600/30 transition flex items-center"><i class="fa-solid fa-print mr-2 text-amber-300"></i> Simpan & Pratinjau Lampiran</button>
+    </div>
+  </div>
+</section>
+
+
+    <!-- TAB NPD -->
+    <section id="tab-npd" class="space-y-6 hidden">
+      <div class="bg-white/90 backdrop-blur-xl rounded-3xl shadow-xl shadow-teal-900/5 border border-white p-6 md:p-8 no-print">
+        <div class="border-b border-slate-100 pb-5 mb-6 flex flex-col md:flex-row md:justify-between md:items-center gap-3">
+          <div>
+            <h2 class="text-2xl font-black text-slate-900 tracking-tight"><i class="fa-solid fa-file-invoice text-teal-600 mr-2.5"></i>Formulir Nota Pencairan Dana (NPD)</h2>
+            <p class="text-sm text-slate-500 mt-1">Format mengikuti file NPD 2026. Data merah pada contoh dibuat otomatis mengikuti Standing Instruction dan Sheet Setting.</p>
+            <div class="flex flex-wrap items-center gap-2 mt-3"><select id="npd-bulan-rekap" class="table-input bg-white font-bold text-teal-800" aria-label="Bulan rekap NPD"></select><button onclick="printMonthlyNPD(document.getElementById('npd-bulan-rekap').value)" class="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-xs font-bold"><i class="fa-solid fa-calendar-days mr-1"></i> NPD per Bulan</button></div>
+          </div>
+          <span class="text-xs font-bold px-4 py-1.5 bg-gradient-to-r from-emerald-500 to-teal-500 text-white rounded-full shadow-sm">Terhubung S.I + Setting</span>
+        </div>
+
+        <div class="grid grid-cols-1 md:grid-cols-2 gap-5">
+          <div>
+            <label class="block text-xs font-bold uppercase tracking-wider text-slate-600 mb-2">Nomor NPD <span class="text-red-500">*</span></label>
+            <input id="npd-nomor" class="table-input font-medium" value="900/007/NPD/0006-PNG" required>
+            <p class="text-[11px] text-slate-400 mt-1">Nomor dibuat manual sesuai contoh NPD.</p>
+          </div>
+          <div>
+            <label class="block text-xs font-bold uppercase tracking-wider text-slate-600 mb-2">Tanggal</label>
+            <input id="npd-tanggal" type="date" class="table-input bg-slate-100/80 font-medium" readonly>
+          </div>
+          <div>
+            <label class="block text-xs font-bold uppercase tracking-wider text-slate-600 mb-2">Bulan Pelaporan</label>
+            <select id="npd-bulan-pelaporan" class="table-input bg-white font-bold text-teal-800" onchange="npdBulanPelaporanChanged()">
+              <option value="2026-01">Januari 2026</option>
+              <option value="2026-02">Februari 2026</option>
+              <option value="2026-03">Maret 2026</option>
+              <option value="2026-04">April 2026</option>
+              <option value="2026-05">Mei 2026</option>
+              <option value="2026-06">Juni 2026</option>
+              <option value="2026-07">Juli 2026</option>
+              <option value="2026-08">Agustus 2026</option>
+              <option value="2026-09">September 2026</option>
+              <option value="2026-10">Oktober 2026</option>
+              <option value="2026-11">November 2026</option>
+              <option value="2026-12">Desember 2026</option>
+            </select>
+            <p class="text-[11px] text-slate-400 mt-1">NPD dan Kartu Kendali mengikuti bulan yang dipilih.</p>
+          </div>
+          <div>
+            <label class="block text-xs font-bold uppercase tracking-wider text-slate-600 mb-2">Jenis NPD</label>
+            <div class="flex gap-5 items-center h-10">
+              <label class="text-sm font-medium"><input type="radio" name="npd-jenis" value="Panjar"> Panjar</label>
+              <label class="text-sm font-medium"><input type="radio" name="npd-jenis" value="Tanpa Panjar" checked> Tanpa Panjar</label>
+            </div>
+          </div>
+          <div>
+            <label class="block text-xs font-bold uppercase tracking-wider text-slate-600 mb-2">PPTK</label>
+            <input id="npd-pptk" class="table-input bg-slate-100/80 font-medium" readonly>
+          </div>
+          <div class="md:col-span-2">
+            <label class="block text-xs font-bold uppercase tracking-wider text-slate-600 mb-2">Program</label>
+            <input id="npd-program" class="table-input bg-slate-100/80 font-medium" readonly>
+          </div>
+          <div>
+            <label class="block text-xs font-bold uppercase tracking-wider text-slate-600 mb-2">Kegiatan (dari S.I) <span class="text-red-500">*</span></label>
+            <select id="npd-kegiatan" class="table-input bg-slate-100/80 font-medium" onchange="npdKegiatanChanged()" required disabled></select>
+          </div>
+          <div>
+            <label class="block text-xs font-bold uppercase tracking-wider text-slate-600 mb-2">Sub Kegiatan (dari S.I) <span class="text-red-500">*</span></label>
+            <select id="npd-subkegiatan" class="table-input bg-slate-100/80 font-medium" onchange="npdSubChanged()" required disabled></select>
+          </div>
+          <div>
+            <label class="block text-xs font-bold uppercase tracking-wider text-slate-600 mb-2">No DPA</label>
+            <input id="npd-dpa" class="table-input bg-slate-50 text-black font-bold" readonly>
+          </div>
+          <div>
+            <label class="block text-xs font-bold uppercase tracking-wider text-slate-600 mb-2">Tahun Anggaran</label>
+            <input id="npd-tahun" class="table-input bg-red-50 text-red-600 font-bold" value="2026" readonly>
+          </div>
+        </div>
+
+        <div class="mt-6 bg-teal-50/50 p-4 rounded-2xl border border-teal-100">
+          <div class="flex items-center justify-between gap-3 mb-3">
+            <div>
+              <h3 class="font-black text-teal-950">Rincian Belanja</h3>
+              <p class="text-xs text-teal-800 mt-0.5">Kolom mengikuti susunan NPD 2026. Nilai pencairan saat ini dapat diisi untuk pengajuan NPD.</p>
+            </div>
+            <button onclick="npdAddRow()" class="px-4 py-2 bg-gradient-to-r from-emerald-600 to-teal-600 text-white rounded-xl text-xs font-bold shadow-md">
+              <i class="fa-solid fa-plus mr-1"></i> Tambah Baris
+            </button>
+          </div>
+          <div class="overflow-x-auto rounded-xl border border-slate-200 bg-white">
+            <table class="min-w-[1050px] w-full text-xs">
+              <thead class="bg-gradient-to-r from-slate-800 to-slate-900 text-white">
+                <tr>
+                  <th class="p-2.5 w-12">No</th>
+                  <th class="p-2.5 w-48 text-left">Kode Rekening</th>
+                  <th class="p-2.5 w-80 text-left">Uraian</th>
+                  <th class="p-2.5 w-40 text-right">Anggaran</th>
+                  <th class="p-2.5 w-44 text-right">Pencairan s.d Bulan Lalu</th>
+                  <th class="p-2.5 w-40 text-right">Pencairan Saat ini</th>
+                  <th class="p-2.5 w-40 text-right">Sisa Anggaran</th>
+                  <th class="p-2.5 w-10"></th>
+                </tr>
+              </thead>
+              <tbody id="npd-input-rows" class="divide-y divide-slate-100"></tbody>
+            </table>
+          </div>
+        </div>
+
+        <div class="flex justify-end gap-3 pt-6">
+          <button onclick="npdReset()" class="px-6 py-3 rounded-xl border border-slate-300 text-sm font-bold text-slate-700 hover:bg-slate-100 transition"><i class="fa-solid fa-rotate-left mr-1.5"></i> Reset</button>
+          <button onclick="npdPreview()" class="px-7 py-3 rounded-xl bg-gradient-to-r from-emerald-600 via-teal-600 to-cyan-600 text-white text-sm font-black shadow-lg transition"><i class="fa-solid fa-print mr-2 text-amber-300"></i> Simpan & Pratinjau NPD</button>
+        </div>
+      </div>
+
+      <div id="npd-print-wrap" class="bg-white p-8 md:p-10 max-w-6xl mx-auto shadow-2xl border border-slate-300 text-black text-[11px]">
+        <div class="no-print flex justify-between items-center bg-slate-900 text-white p-3 rounded-xl mb-5">
+          <span class="font-black">Pratinjau NPD</span>
+          <button onclick="printNPD()" class="px-5 py-2 bg-emerald-500 hover:bg-emerald-600 rounded-lg font-bold"><i class="fa-solid fa-print mr-1.5"></i> Cetak NPD</button>
+        </div>
+        <div id="npd-print-area" class="font-sans">
+          <div class="text-center font-bold text-sm leading-tight">SKPD SEKRETARIAT DAERAH</div>
+          <div class="text-center font-bold text-sm leading-tight">PERENCANAAN, KEUANGAN DAN PELAPORAN</div>
+          <div class="text-center font-bold text-base mt-1">NOTA PENCAIRAN DANA (NPD)</div>
+
+          <table class="w-full mt-7 mb-5">
+            <tr><td class="w-28 py-1">Nomor</td><td class="w-4">:</td><td id="npdp-nomor" class="font-semibold text-black"></td></tr>
+            <tr><td class="py-1">Tanggal</td><td>:</td><td id="npdp-tanggal" class="font-semibold text-black"></td></tr>
+            <tr><td class="py-1 align-top">Jenis NPD</td><td class="align-top">:</td><td><span id="npdp-panjar">(&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;) Panjar</span><br><span id="npdp-tanpa">(&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;) Tanpa Panjar</span></td></tr>
+            <tr><td class="py-1">PPTK</td><td>:</td><td id="npdp-pptk" class="font-semibold text-black"></td></tr>
+            <tr><td class="py-1">Program</td><td>:</td><td id="npdp-program" class="font-semibold text-black"></td></tr>
+            <tr><td class="py-1">Kegiatan</td><td>:</td><td id="npdp-kegiatan" class="font-semibold text-black"></td></tr>
+            <tr><td class="py-1">Sub Kegiatan</td><td>:</td><td id="npdp-sub" class="font-semibold text-black"></td></tr>
+            <tr><td class="py-1">No DPA</td><td>:</td><td id="npdp-dpa" class="font-semibold text-black"></td></tr>
+            <tr><td class="py-1">Tahun Anggaran</td><td>:</td><td id="npdp-tahun" class="font-semibold text-black"></td></tr>
+          </table>
+
+          <div class="font-bold mb-2">Rincian Belanja ;</div>
+          <table class="w-full border-collapse border border-black">
+            <thead>
+              <tr class="font-bold text-center align-middle">
+                <th class="border border-black p-1 w-10">No</th>
+                <th class="border border-black p-1">Kode Rekening</th>
+                <th class="border border-black p-1">Uraian</th>
+                <th class="border border-black p-1">Anggaran</th>
+                <th class="border border-black p-1">Pencairan s.d Bulan Lalu</th>
+                <th class="border border-black p-1">Pencairan Saat ini</th>
+                <th class="border border-black p-1">Sisa Anggaran</th>
+              </tr>
+            </thead>
+            <tbody id="npd-preview-rows"></tbody>
+            <tfoot><tr class="font-bold"><td colspan="3" class="border border-black p-1 text-right">TOTAL</td><td id="npd-total-anggaran" class="border border-black p-1 text-right">Rp 0</td><td id="npd-total-lalu" class="border border-black p-1 text-right">Rp 0</td><td id="npd-total-kini" class="border border-black p-1 text-right">Rp 0</td><td id="npd-total-sisa" class="border border-black p-1 text-right">Rp 0</td></tr></tfoot>
+          </table>
+
+          <div class="mt-14 grid grid-cols-2 gap-16 text-center">
+            <div>
+              <p class="font-bold">Kuasa Pengguna Anggaran</p>
+              <div class="h-20"></div>
+              <p id="npdp-pa" class="font-bold underline"></p>
+              <p id="npdp-pa-nip"></p>
+            </div>
+            <div>
+              <p class="font-bold">Pejabat Pelaksana Teknis Kegiatan</p>
+              <div class="h-20"></div>
+              <p id="npdp-ttd-pptk" class="font-bold underline"></p>
+              <p id="npdp-ttd-nip"></p>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- TAB KARTU KENDALI -->
+    <section id="tab-kk" class="space-y-6 hidden">
+      <div class="bg-white/90 backdrop-blur-xl rounded-3xl shadow-xl shadow-teal-900/5 border border-white p-6 md:p-8 no-print">
+        <div class="border-b border-slate-100 pb-5 mb-6 flex flex-col md:flex-row md:justify-between md:items-center gap-3">
+          <div>
+            <h2 class="text-2xl font-black text-slate-900 tracking-tight"><i class="fa-solid fa-table-columns text-teal-600 mr-2.5"></i>Kartu Kendali Kegiatan</h2>
+            <p class="text-sm text-slate-500 mt-1">Rincian mengikuti NPD yang sedang dipilih. Perhitungan Pagu, Bulan Lalu, Bulan Ini, Kumulatif dan Sisa mengikuti skema NPD.</p>
+          </div>
+          <div class="flex flex-wrap gap-2"><select id="kk-bulan-rekap" class="table-input bg-white font-bold text-teal-800" aria-label="Bulan rekap kartu kendali"></select><button onclick="printMonthlyKK(document.getElementById('kk-bulan-rekap').value)" class="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-bold rounded-xl"><i class="fa-solid fa-calendar-days mr-1"></i> Kartu Kendali per Bulan</button><button onclick="printKK()" class="px-5 py-2.5 bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-700 hover:to-teal-700 text-white text-sm font-black rounded-xl shadow-md">
+            <i class="fa-solid fa-print mr-2 text-amber-200"></i> Cetak Kartu Kendali
+          </button></div>
+        </div>
+        <div class="bg-teal-50 border border-teal-100 rounded-2xl p-4 text-sm">
+          <div class="font-bold text-teal-950">Sumber data</div>
+          <div class="text-teal-800 mt-1">Kegiatan/Sub Kegiatan mengikuti pilihan NPD. Jika pilihan NPD berubah, Kartu Kendali ikut diperbarui otomatis.</div>
+        </div>
+        <div class="mt-4 flex flex-wrap items-end gap-3 no-print">
+          <div class="min-w-[220px]">
+            <label class="block text-xs font-bold uppercase tracking-wider text-slate-600 mb-2">Bulan Pelaporan Kartu Kendali</label>
+            <select id="kk-bulan-pelaporan" class="table-input bg-white font-bold text-teal-800" onchange="kkBulanPelaporanChanged()">
+              <option value="2026-01">Januari 2026</option>
+              <option value="2026-02">Februari 2026</option>
+              <option value="2026-03">Maret 2026</option>
+              <option value="2026-04">April 2026</option>
+              <option value="2026-05">Mei 2026</option>
+              <option value="2026-06">Juni 2026</option>
+              <option value="2026-07">Juli 2026</option>
+              <option value="2026-08">Agustus 2026</option>
+              <option value="2026-09">September 2026</option>
+              <option value="2026-10">Oktober 2026</option>
+              <option value="2026-11">November 2026</option>
+              <option value="2026-12">Desember 2026</option>
+            </select>
+          </div>
+          <button onclick="kkOpenEdit()" class="px-5 py-2.5 bg-indigo-600 hover:bg-indigo-700 text-white text-sm font-black rounded-xl shadow-md">
+            <i class="fa-solid fa-pen-to-square mr-2"></i> Edit Pembagian Bulan Ini
+          </button>
+          <span class="text-xs text-slate-500">Transaksi di atas Rp50.000.000 otomatis masuk LS dan tidak dapat dipindahkan.</span>
+        </div>
+        <div id="kk-edit-panel" class="hidden mt-4 rounded-2xl border border-indigo-100 bg-indigo-50 p-4 no-print">
+          <div class="flex items-center justify-between mb-3">
+            <div>
+              <div class="font-black text-indigo-950">Pembagian Realisasi Kegiatan Bulan Ini</div>
+              <div class="text-xs text-indigo-700">Pilih UP, GU, TU, atau KKPD untuk transaksi sampai dengan Rp50 juta. LS otomatis untuk transaksi di atas Rp50 juta.</div>
+            </div>
+            <button onclick="kkCloseEdit()" class="px-3 py-1.5 rounded-lg bg-white border border-indigo-200 text-indigo-700 font-bold">Tutup</button>
+          </div>
+          <div id="kk-edit-list" class="space-y-2 max-h-80 overflow-auto"></div>
+        </div>
+      </div>
+
+      <div id="kk-print-wrap" class="bg-white p-5 md:p-7 max-w-[1600px] mx-auto shadow-2xl border border-slate-300 text-black text-[9px]">
+        <div class="no-print flex justify-between items-center bg-slate-900 text-white p-3 rounded-xl mb-5">
+          <span class="font-black">Pratinjau Kartu Kendali</span>
+          <button onclick="printKK()" class="px-5 py-2 bg-emerald-500 hover:bg-emerald-600 rounded-lg font-bold"><i class="fa-solid fa-print mr-1.5"></i> Cetak</button>
+        </div>
+        <div id="kk-print-area" class="font-sans">
+          <div class="text-center font-bold text-sm leading-tight">PEMERINTAH KOTA BOGOR</div>
+          <div class="text-center font-bold text-base mt-1">KARTU KENDALI KEGIATAN</div>
+
+          <table class="w-full mt-4 mb-4 text-[9px]">
+            <tr><td class="w-28 py-0.5 font-bold">SKPD</td><td class="w-4">:</td><td id="kk-skpd" class="font-semibold"></td></tr>
+            <tr><td class="py-0.5 font-bold">NAMA PROGRAM</td><td>:</td><td id="kk-program" class="font-semibold"></td></tr>
+            <tr><td class="py-0.5 font-bold">NAMA KEGIATAN</td><td>:</td><td id="kk-kegiatan" class="font-semibold"></td></tr>
+            <tr><td class="py-0.5 font-bold">BULAN</td><td>:</td><td id="kk-bulan" class="font-semibold"></td></tr>
+            <tr><td class="py-0.5 font-bold">SUB KEGIATAN</td><td>:</td><td id="kk-sub" class="font-semibold"></td></tr>
+          </table>
+
+          <table id="kk-table" class="w-full border-collapse border border-black text-[8px]">
+            <thead>
+              <tr class="font-bold text-center align-middle">
+                <th rowspan="2" class="border border-black p-1 w-7">No</th>
+                <th rowspan="2" class="border border-black p-1">Kode Rekening</th>
+                <th rowspan="2" class="border border-black p-1">Uraian</th>
+                <th colspan="3" class="border border-black p-1">Rincian Perhitungan</th>
+                <th colspan="2" class="border border-black p-1">Pagu Anggaran Kegiatan</th>
+                <th colspan="2" class="border border-black p-1">Realisasi Kegiatan (SP2D) s/d Bulan Lalu</th>
+                <th colspan="5" class="border border-black p-1">Realisasi Kegiatan (SP2D) Bulan Ini</th>
+                <th colspan="2" class="border border-black p-1">Realisasi Kegiatan (SP2D) s/d Bulan Ini</th>
+                <th rowspan="2" class="border border-black p-1">Sisa Pagu Anggaran</th>
+              </tr>
+              <tr class="font-bold text-center align-middle">
+                <th class="border border-black p-1">Volume</th>
+                <th class="border border-black p-1">Satuan</th>
+                <th class="border border-black p-1">Harga Satuan</th>
+                <th class="border border-black p-1">UP/GU/TU/KKPD</th>
+                <th class="border border-black p-1">LS</th>
+                <th class="border border-black p-1">UP/GU/TU/KKPD</th>
+                <th class="border border-black p-1">LS</th>
+                <th class="border border-black p-1">UP</th>
+                <th class="border border-black p-1">GU</th>
+                <th class="border border-black p-1">TU</th>
+                <th class="border border-black p-1">LS</th>
+                <th class="border border-black p-1">KKPD</th>
+                <th class="border border-black p-1">UP/GU/TU/KKPD</th>
+                <th class="border border-black p-1">LS</th>
+              </tr>
+            </thead>
+            <tbody id="kk-preview-rows"></tbody>
+            <tfoot>
+              <tr class="font-bold">
+                <td colspan="6" class="border border-black p-1 text-right">JUMLAH SUB KEGIATAN</td>
+                <td id="kk-total-pagu-ugt" class="border border-black p-1 text-right"></td>
+                <td id="kk-total-pagu-ls" class="border border-black p-1 text-right"></td>
+                <td id="kk-total-lalu-ugt" class="border border-black p-1 text-right"></td>
+                <td id="kk-total-lalu-ls" class="border border-black p-1 text-right"></td>
+                <td id="kk-total-up" class="border border-black p-1 text-right"></td>
+                <td id="kk-total-gu" class="border border-black p-1 text-right"></td>
+                <td id="kk-total-tu" class="border border-black p-1 text-right"></td>
+                <td id="kk-total-kini-ls" class="border border-black p-1 text-right"></td>
+                <td id="kk-total-kkpd" class="border border-black p-1 text-right"></td>
+                <td id="kk-total-kumulatif-ugt" class="border border-black p-1 text-right"></td>
+                <td id="kk-total-kumulatif-ls" class="border border-black p-1 text-right"></td>
+                <td id="kk-total-sisa" class="border border-black p-1 text-right"></td>
+              </tr>
+            </tfoot>
+          </table>
+
+          <div class="mt-10 grid grid-cols-2 gap-20 text-center text-[9px]">
+            <div>
+              <p class="font-bold">Mengetahui,</p>
+              <p class="font-bold">Kuasa Pengguna Anggaran</p>
+              <div class="h-16"></div>
+              <p id="kk-pa" class="font-bold underline"></p>
+              <p id="kk-pa-nip"></p>
+            </div>
+            <div>
+              <p class="font-bold">Pejabat Pelaksana Teknis Kegiatan</p>
+              <div class="h-16"></div>
+              <p id="kk-pptk" class="font-bold underline"></p>
+              <p id="kk-pptk-nip"></p>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- TAB 2: DATABASE REKAP DATA -->
+    <section id="tab-database" class="space-y-6 hidden">
+      <div class="bg-white/90 backdrop-blur-xl rounded-3xl shadow-xl shadow-teal-900/5 border border-white p-6 md:p-8">
+        <div class="flex flex-col md:flex-row md:items-center justify-between gap-4 mb-6">
+          <div>
+            <h2 class="text-2xl font-black text-slate-900 tracking-tight"><i class="fa-solid fa-database text-teal-600 mr-2.5"></i>Rekapitulasi Pengajuan Standing Instruction</h2>
+            <p class="text-sm text-slate-500 mt-1">Daftar semua transaksi pengajuan yang telah dimasukkan.</p>
+          </div>
+          <div class="flex items-center space-x-3">
+            <input type="text" id="search-query" onkeyup="renderTable()" placeholder="Cari No. Surat / PPTK..." class="px-4 py-2.5 rounded-xl border border-slate-200 bg-slate-50/50 text-sm focus:bg-white focus:ring-2 focus:ring-teal-500 outline-none w-64 font-medium">
+            <select id="si-bulan-rekap" class="px-3 py-2.5 rounded-xl border border-slate-200 bg-white text-sm font-bold" aria-label="Bulan rekap S.I"></select>
+            <button onclick="printMonthlySI(document.getElementById('si-bulan-rekap').value)" class="px-5 py-2.5 bg-indigo-600 hover:bg-indigo-700 text-white text-sm font-bold rounded-xl shadow-md transition"><i class="fa-solid fa-calendar-days mr-2"></i>Cetak S.I per Bulan</button>
+            <button onclick="printRekapGabungan()" class="px-5 py-2.5 bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-700 hover:to-teal-700 text-white text-sm font-bold rounded-xl shadow-md transition flex items-center">
+              <i class="fa-solid fa-layer-group mr-2 text-amber-200"></i> Cetak Rekapan Gabungan
+            </button>
+            <button onclick="exportToCSV()" class="px-5 py-2.5 bg-gradient-to-r from-slate-800 to-slate-900 hover:from-slate-900 hover:to-black text-white text-sm font-bold rounded-xl shadow-md transition flex items-center">
+              <i class="fa-solid fa-file-excel mr-2 text-emerald-400"></i> Export CSV
+            </button>
+          </div>
+        </div>
+
+        <div class="overflow-x-auto rounded-2xl border border-slate-200 shadow-sm bg-white">
+          <table class="w-full text-left text-sm text-slate-600">
+            <thead class="bg-gradient-to-r from-slate-800 to-slate-900 text-white uppercase font-bold text-xs tracking-wider border-b border-slate-200">
+              <tr>
+                <th class="px-5 py-3.5">No. Surat</th>
+                <th class="px-5 py-3.5">Tanggal</th>
+                <th class="px-5 py-3.5">Bulan</th>
+                <th class="px-5 py-3.5">Sub Kegiatan</th>
+                <th class="px-5 py-3.5">PPTK</th>
+                <th class="px-5 py-3.5 text-right">Nominal (Rp)</th>
+                <th class="px-5 py-3.5 text-center">Aksi</th>
+              </tr>
+            </thead>
+            <tbody id="table-body" class="divide-y divide-slate-100 bg-white font-medium">
+              <!-- Rendered via JS -->
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </section>
+
+    <!-- TAB 3: PRATINJAU FORM F4 (CETAK SURAT) -->
+    <section id="tab-preview" class="space-y-6 hidden">
+      <div class="no-print bg-gradient-to-r from-slate-900 via-teal-950 to-slate-900 text-white p-4 rounded-2xl flex items-center justify-between shadow-xl border border-teal-900/50">
+        <div class="flex items-center space-x-3">
+          <button onclick="switchTab('input')" class="px-4 py-2 bg-white/10 hover:bg-white/20 rounded-xl text-xs font-bold transition backdrop-blur-md flex items-center border border-white/10">
+            <i class="fa-solid fa-arrow-left mr-1.5"></i> Kembali
+          </button>
+          <span class="text-sm font-black text-teal-300 tracking-wide">Pratinjau Cetak Surat FORM F4</span>
+        </div>
+        <div class="flex items-center space-x-3">
+          <button onclick="printF4()" class="px-6 py-2.5 bg-gradient-to-r from-emerald-500 to-teal-500 hover:from-emerald-600 hover:to-teal-600 text-white text-sm font-black rounded-xl transition shadow-lg shadow-teal-500/30 flex items-center">
+            <i class="fa-solid fa-print mr-2 text-amber-200"></i> Cetak Surat Sekarang
+          </button>
+        </div>
+      </div>
+
+      <!-- TEMPLATE LEMBAR F4 (Dibuat mirip presisi dengan Excel) -->
+      <div class="bg-white p-12 max-w-4xl mx-auto shadow-2xl rounded-sm text-black font-serif text-sm leading-relaxed border border-slate-300" id="print-area">
+        
+        <div class="text-center font-bold text-base tracking-widest underline uppercase mb-6">
+          STANDING INSTRUCTION
+        </div>
+
+        <div class="flex justify-end mb-4 font-sans text-xs">
+          <div>Bogor, <span id="f4-tanggal-cetak">06 Oktober 2026</span></div>
+        </div>
+
+        <!-- Tabel Identitas Surat -->
+        <table class="w-full mb-6 font-sans text-xs">
+          <tr>
+            <td class="w-28 font-medium">No. Surat</td>
+            <td class="w-4 text-center">:</td>
+            <td class="font-bold"><span id="f4-no-surat">001/7.01.2.13.0.00.35.0010/SI/PNG/2026</span></td>
+          </tr>
+          <tr>
+            <td class="font-medium">Sifat</td>
+            <td class="text-center">:</td>
+            <td>-</td>
+          </tr>
+          <tr>
+            <td class="font-medium">Lampiran</td>
+            <td class="text-center">:</td>
+            <td>1 (Satu) berkas</td>
+          </tr>
+          <tr>
+            <td class="font-medium align-top">Kegiatan</td>
+            <td class="text-center align-top">:</td>
+            <td class="font-semibold" id="f4-kegiatan">Administrasi Umum Perangkat Daerah</td>
+          </tr>
+          <tr>
+            <td class="font-medium align-top">Sub. Kegiatan</td>
+            <td class="text-center align-top">:</td>
+            <td class="font-semibold" id="f4-subkegiatan">Pembangunan Sarana dan Prasarana Kelurahan</td>
+          </tr>
+        </table>
+
+        <!-- Tujuan Surat -->
+        <div class="mb-6 font-sans text-xs space-y-1">
+          <p class="font-bold">Kepada Yth,</p>
+          <p class="font-bold">Kuasa Pengguna Anggaran</p>
+          <p class="pl-4">up Bendahara Pengeluaran Kelurahan Panaragan Kecamatan Bogor Tengah Kota Bogor</p>
+          <p class="pl-4">di</p>
+          <p class="pl-8 font-bold tracking-wider">B O G O R</p>
+        </div>
+
+        <!-- Isi Surat -->
+        <div class="space-y-4 text-justify font-sans text-xs leading-normal">
+          <p>Yang bertanda tangan dibawah ini,</p>
+
+          <div class="pl-6 space-y-1">
+            <div class="grid grid-cols-12">
+              <span class="col-span-2 font-medium">Nama</span>
+              <span class="col-span-1 text-center">:</span>
+              <span class="col-span-9 font-bold" id="f4-pptk-nama">IRAWAN, SE</span>
+            </div>
+            <div class="grid grid-cols-12">
+              <span class="col-span-2 font-medium">Jabatan</span>
+              <span class="col-span-1 text-center">:</span>
+              <span class="col-span-9">Pejabat Pelaksana Teknis Kegiatan (PPTK)</span>
+            </div>
+          </div>
+
+          <p>Dengan ini kami mohon kepada saudara untuk dapat melakukan pemindahbukuan dan mentransfer sejumlah dana sebagai berikut:</p>
+
+          <div class="pl-6 space-y-1">
+            <div class="grid grid-cols-12">
+              <span class="col-span-3 font-medium">Sejumlah Dana</span>
+              <span class="col-span-1 text-center">:</span>
+              <span class="col-span-8 font-bold text-sm" id="f4-nominal">Rp 10.000.000,-</span>
+            </div>
+            <div class="grid grid-cols-12">
+              <span class="col-span-3 font-medium">Terbilang</span>
+              <span class="col-span-1 text-center">:</span>
+              <span class="col-span-8 italic font-semibold" id="f4-terbilang">( Sepuluh Juta Rupiah )</span>
+            </div>
+            <div class="grid grid-cols-12">
+              <span class="col-span-3 font-medium">Keterangan</span>
+              <span class="col-span-1 text-center">:</span>
+              <span class="col-span-8" id="f4-keterangan">Terlampir rincian pengajuan</span>
+            </div>
+          </div>
+
+          <p class="pt-2">Demikian Standing Instruction ini kami buat untuk dipergunakan sebagaimana mestinya dan akibat apapun yang mungkin timbul dari pelaksanaan pemindahbukuan dan transfer berdasarkan Standing Instruction ini menjadi tanggung jawab kami.</p>
+        </div>
+
+        <!-- Tanda Tangan Block -->
+        <div class="mt-12 grid grid-cols-2 gap-8 text-center font-sans text-xs">
+          <div class="space-y-16">
+            <div>
+              <p class="font-bold">Mengetahui/Menyetujui,</p>
+              <p class="font-bold">Kuasa Pengguna Anggaran</p>
+            </div>
+            <div>
+              <p class="font-bold underline text-sm" id="f4-pa-nama">-</p>
+              <p class="text-slate-600" id="f4-pa-nip">NIP. -</p>
+            </div>
+          </div>
+
+          <div class="space-y-16">
+            <div>
+              <p>&nbsp;</p>
+              <p class="font-bold">Pejabat Pelaksana Teknis Kegiatan,</p>
+            </div>
+            <div>
+              <p class="font-bold underline text-sm" id="f4-ttd-nama">IRAWAN, SE</p>
+              <p class="text-slate-600" id="f4-ttd-nip">NIP. 197602282010011001</p>
+            </div>
+          </div>
+        </div>
+
+      </div>
+    </section>
+
+    <!-- TAB LAMPIRAN PREVIEW -->
+<section id="tab-lampiran-preview" class="hidden">
+  <div class="no-print bg-gradient-to-r from-slate-900 via-teal-950 to-slate-900 text-white p-4 rounded-2xl flex justify-between items-center mb-5 shadow-xl border border-teal-900/50">
+    <button onclick="switchTab('lampiran')" class="px-4 py-2 bg-white/10 hover:bg-white/20 rounded-xl text-sm font-bold transition flex items-center border border-white/10"><i class="fa-solid fa-arrow-left mr-1.5"></i> Kembali</button>
+    <button onclick="printLampiran()" class="px-6 py-2.5 bg-gradient-to-r from-emerald-500 to-teal-500 hover:from-emerald-600 hover:to-teal-600 text-white text-sm font-black rounded-xl shadow-lg shadow-teal-500/30 transition flex items-center"><i class="fa-solid fa-print mr-2 text-amber-200"></i> Cetak F4</button>
+  </div>
+  <div id="lampiran-print-area" class="bg-white shadow-xl border p-8 text-black text-[10px]">
+    <h2 class="text-center font-bold text-base uppercase mb-5">Lampiran Permintaan Pembayaran Non Tunai</h2>
+    <table class="w-full mb-4">
+      <tr><td class="w-24">Program</td><td class="w-3">:</td><td id="p-program"></td></tr>
+      <tr><td>Kegiatan</td><td>:</td><td id="p-kegiatan"></td></tr>
+      <tr><td>Sub Kegiatan</td><td>:</td><td id="p-sub"></td></tr>
+      <tr><td>Bulan</td><td>:</td><td id="p-bulan"></td></tr>
+    </table>
+    <table class="w-full border-collapse border border-black">
+      <thead>
+        <tr class="font-bold text-center align-middle">
+          <th class="border border-black p-1">No</th>
+          <th class="border border-black p-1">Kode Rekening</th>
+          <th class="border border-black p-1">Uraian Kegiatan</th>
+          <th class="border border-black p-1">Nama Penerima</th>
+          <th class="border border-black p-1">Nama Bank</th>
+          <th class="border border-black p-1">Rekening Bank</th>
+          <th class="border border-black p-1">Jumlah</th>
+          <th class="border border-black p-1">Harga Negosiasi</th>
+          <th class="border border-black p-1">PPN</th>
+          <th class="border border-black p-1">PPh 21</th>
+          <th class="border border-black p-1">PPh 22</th>
+          <th class="border border-black p-1">PPh 23</th>
+          <th class="border border-black p-1">Potongan</th>
+          <th class="border border-black p-1">Jumlah yang dibayarkan</th>
+        </tr>
+      </thead>
+      <tbody id="preview-rows"></tbody>
+      <tfoot id="preview-total"></tfoot>
+    </table>
+
+    <div class="mt-10 grid grid-cols-3 gap-6 text-center text-[10px]">
+      <div>
+        <p>Mengetahui/Menyetujui,</p>
+        <p class="font-bold">Pengguna Anggaran</p>
+        <div class="h-20"></div>
+        <p class="font-bold underline" id="lamp-ttd-pa">-</p>
+        <p id="lamp-ttd-pa-nip">NIP. -</p>
+      </div>
+      <div>
+        <p>&nbsp;</p>
+        <p class="font-bold">Bendahara Pengeluaran</p>
+        <div class="h-20"></div>
+        <p class="font-bold underline" id="lamp-ttd-bendahara">MARI HASTUTI, SE</p>
+        <p id="lamp-ttd-bendahara-nip">NIP. 197603191996032001</p>
+      </div>
+      <div>
+        <p>&nbsp;</p>
+        <p class="font-bold">Pejabat Pelaksana Teknis Kegiatan</p>
+        <div class="h-20"></div>
+        <p class="font-bold underline" id="lamp-ttd-pptk">-</p>
+        <p id="lamp-ttd-pptk-nip">NIP. -</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+    <!-- TAB 4: MASTER DATA SETTING -->
+    <section id="tab-master" class="space-y-6 hidden">
+      <div class="bg-white/90 backdrop-blur-xl rounded-3xl shadow-xl shadow-teal-900/5 border border-white p-6 md:p-8">
+        <h2 class="text-2xl font-black text-slate-900 tracking-tight mb-2"><i class="fa-solid fa-sliders text-teal-600 mr-2.5"></i>Kelola Master Data (Diambil dari Sheet1 Excel)</h2>
+        <p class="text-sm text-slate-500 mb-6">Anda dapat menambah atau memperbarui opsi Kegiatan, Sub Kegiatan, dan Data Pejabat di sini.</p>
+
+        <div class="grid grid-cols-1 md:grid-cols-2 gap-8">
+          
+          <!-- Pengguna Anggaran -->
+          <div class="bg-gradient-to-br from-teal-50/60 to-cyan-50/60 p-6 rounded-2xl border border-teal-100 md:col-span-2 shadow-sm">
+            <h3 class="font-black text-teal-950 text-sm mb-4 flex items-center"><i class="fa-solid fa-user-tie text-teal-600 mr-2"></i>Pengguna Anggaran</h3>
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-3 mb-4">
+              <input id="m-pa-nama" class="table-input font-medium" placeholder="Nama Pengguna Anggaran">
+              <input id="m-pa-nip" class="table-input font-medium" placeholder="NIP Pengguna Anggaran">
+            </div>
+            <button onclick="savePenggunaAnggaran()" class="px-5 py-2.5 bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-700 hover:to-teal-700 text-white rounded-xl text-sm font-bold shadow-md shadow-teal-600/20 transition flex items-center"><i class="fa-solid fa-save mr-1.5"></i> Simpan Pengguna Anggaran</button>
+          </div>
+
+          <!-- Master Pejabat -->
+          <div class="bg-gradient-to-br from-slate-50 to-teal-50/40 p-6 rounded-2xl border border-slate-200 shadow-sm">
+            <h3 class="font-black text-slate-900 text-sm mb-4 flex items-center"><i class="fa-solid fa-users text-teal-600 mr-2"></i>Daftar Pejabat / PPTK</h3>
+            <ul id="master-pejabat-list" class="space-y-2.5 mb-4 text-xs">
+              <!-- Rendered via JS -->
+            </ul>
+            <div class="border-t border-slate-200 pt-4">
+              <div class="grid grid-cols-1 md:grid-cols-3 gap-3 mb-3">
+                <input id="m-pejabat-nama" class="table-input font-medium" placeholder="Nama Pejabat">
+                <input id="m-pejabat-nip" class="table-input font-medium" placeholder="NIP">
+                <input id="m-pejabat-jabatan" class="table-input font-medium" placeholder="Jabatan">
+              </div>
+              <div class="flex gap-2">
+                <button id="btn-save-pejabat" onclick="savePejabat()" class="px-4 py-2.5 bg-gradient-to-r from-emerald-600 to-teal-600 text-white rounded-xl text-sm font-bold shadow-md shadow-teal-600/20"><i class="fa-solid fa-plus mr-1"></i> Tambah Pejabat</button>
+                <button id="btn-cancel-pejabat" onclick="cancelEditPejabat()" class="hidden px-4 py-2.5 bg-slate-200 text-slate-700 rounded-xl text-sm font-bold">Batal</button>
+              </div>
+            </div>
+          </div>
+
+          <!-- Master Sub Kegiatan -->
+          <div class="bg-gradient-to-br from-slate-50 to-teal-50/40 p-6 rounded-2xl border border-slate-200 shadow-sm">
+            <h3 class="font-black text-slate-900 text-sm mb-4 flex items-center"><i class="fa-solid fa-list-check text-teal-600 mr-2"></i>Daftar Sub Kegiatan</h3>
+            <ul id="master-sub-list" class="space-y-2 mb-4 text-xs max-h-60 overflow-y-auto pr-2">
+              <!-- Rendered via JS -->
+            </ul>
+          </div>
+
+          <!-- Master Penerima Lampiran -->
+          <div class="bg-gradient-to-br from-teal-50/60 to-cyan-50/60 p-6 rounded-2xl border border-teal-100 md:col-span-2 shadow-sm">
+            <h3 class="font-black text-teal-950 text-sm mb-1.5 flex items-center"><i class="fa-solid fa-user-check text-teal-600 mr-2"></i>Master Data Penerima</h3>
+            <p class="text-xs text-teal-800 font-medium mb-4">Data ini menjadi pilihan pada kolom Nama Penerima dan otomatis mengisi Bank serta Rekening Bank.</p>
+            <div class="grid grid-cols-1 md:grid-cols-3 gap-3 mb-4">
+              <input id="m-nama" class="table-input font-medium" placeholder="Nama Penerima">
+              <input id="m-bank" class="table-input font-medium" placeholder="Nama Bank">
+              <input id="m-rek" class="table-input font-medium" placeholder="Nomor Rekening">
+            </div>
+            <button onclick="addRecipient()" class="px-5 py-2.5 bg-gradient-to-r from-emerald-600 to-teal-600 text-white rounded-xl text-sm font-bold shadow-md shadow-teal-600/20 mb-4 flex items-center"><i class="fa-solid fa-plus mr-1.5"></i> Tambah Penerima</button>
+            <div id="recipient-list" class="space-y-2 max-h-60 overflow-y-auto"></div>
+          </div>
+
+          <!-- Master Rincian Lampiran -->
+          <div class="bg-gradient-to-br from-teal-50/60 to-cyan-50/60 p-6 rounded-2xl border border-teal-100 md:col-span-2 shadow-sm">
+            <h3 class="font-black text-teal-950 text-sm mb-1.5 flex items-center"><i class="fa-solid fa-table-list text-teal-600 mr-2"></i>Master Rincian Lampiran</h3>
+            <p class="text-xs text-teal-800 font-medium mb-4">Tambahkan hubungan <b>Sub Kegiatan → Kode Rekening → Uraian Kegiatan</b>. Setelah Sub Kegiatan dipilih otomatis, kode dan uraian akan menjadi pilihan di Lampiran.</p>
+            <div class="grid grid-cols-1 md:grid-cols-3 gap-3 mb-4">
+              <select id="m-sub" class="table-input font-medium">
+                <option value="">-- pilih Sub Kegiatan --</option>
+              </select>
+              <input id="m-kode" class="table-input font-medium" placeholder="Kode Rekening">
+              <input id="m-uraian" class="table-input font-medium" placeholder="Uraian Kegiatan">
+            </div>
+            <button onclick="addItem()" class="px-5 py-2.5 bg-gradient-to-r from-emerald-600 to-teal-600 text-white rounded-xl text-sm font-bold shadow-md shadow-teal-600/20 mb-4 flex items-center"><i class="fa-solid fa-plus mr-1.5"></i> Tambah Rincian</button>
+            <div id="item-list" class="space-y-2 max-h-72 overflow-y-auto"></div>
+          </div>
+
+        </div>
+      </div>
+    </section>
+
+  </main>
+
+  <!-- Area khusus Cetak Rekapan Gabungan: S.I portrait + Lampiran landscape + NPD portrait -->
+  <div id="rekap-print-wrap" class="hidden"></div>
+
+  <!-- Footer -->
+  <footer class="bg-white/80 backdrop-blur-md border-t border-slate-200 py-5 mt-auto no-print">
+    <div class="max-w-7xl mx-auto px-4 text-center text-xs text-slate-500 font-medium">
+      Aplikasi Standing Instruction Keuangan Terintegrasi (S.I + Lampiran) &copy; 2026 - Disesuaikan dengan Format Sheet Excel Kelurahan Panaragan.
+    </div>
+  </footer>
+
+  <!-- Firebase Authentication + sinkronisasi Realtime Database dengan token pengguna -->
+  <script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-auth-compat.js"></script>
+  <script>
+  (function () {
+    'use strict';
+    const firebaseConfig = {
+      apiKey: 'AIzaSyBDU9EqVPvBayogPPsispPKQi4l--IqpWs',
+      authDomain: 'administrasi-png.firebaseapp.com',
+      projectId: 'administrasi-png',
+      storageBucket: 'administrasi-png.firebasestorage.app',
+      messagingSenderId: '1026637611128',
+      appId: '1:1026637611128:web:96ca7590669030c54fed8',
+      measurementId: 'G-LW5JZSRJNS',
+      databaseURL: 'https://administrasi-png-default-rtdb.asia-southeast1.firebasedatabase.app'
+    };
+    const RTDB_URL = firebaseConfig.databaseURL;
+    const ROOT = RTDB_URL + '/appData';
+    const LOGIN_EMAIL = 'kelurahanpanaragan@gmail.com';
+    const LOGIN_USER = 'Galz_Hdt';
+    const SYNC_KEYS = new Set([
+      'si_database', 'lampiran_database', 'npd_database_v1',
+      'si_master_pejabat', 'si_pengguna_anggaran', 'lampiran_recipients',
+      'lampiran_items', 'npd_bulan_pelaporan_v1', 'kk_bulan_pelaporan_v1',
+      'npd_realisasi_bulanan_v1', 'kk_sp2d_bulan_ini_v1'
+    ]);
+    let applyingRemote = false;
+    let stream = null;
+    let remoteSnapshot = {};
+    let deferredReload = false;
+    if (!firebase.apps.length) firebase.initializeApp(firebaseConfig);
+    const auth = firebase.auth();
+    auth.setPersistence(firebase.auth.Auth.Persistence.LOCAL).catch(function(e){ console.warn('[Firebase Auth] Persistence:', e); });
+
+    function safeParse(raw) { try { return raw == null ? null : JSON.parse(raw); } catch (_) { return raw; } }
+    async function authedUrl(path) {
+      const user = auth.currentUser;
+      if (!user) throw new Error('Belum login Firebase.');
+      const token = await user.getIdToken();
+      return path + (path.includes('?') ? '&' : '?') + 'auth=' + encodeURIComponent(token);
+    }
+    async function request(path, options) {
+      const url = await authedUrl(path);
+      const controller = new AbortController();
+      const timeoutId = setTimeout(function () { controller.abort(); }, 12000);
+      try {
+        const requestOptions = Object.assign({}, options || {}, { signal: controller.signal });
+        const response = await fetch(url, requestOptions);
+        if (!response.ok) throw new Error('Realtime Database HTTP ' + response.status);
+        return response.status === 204 ? null : await response.json();
+      } catch (error) {
+        if (error && error.name === 'AbortError') {
+          throw new Error('Koneksi Firebase terlalu lama (lebih dari 12 detik). Periksa internet dan aturan Realtime Database.');
+        }
+        throw error;
+      } finally {
+        clearTimeout(timeoutId);
+      }
+    }
+    function applyRemoteData(data, reloadIfChanged) {
+      if (!data || typeof data !== 'object') data = {};
+      let changed = false;
+      applyingRemote = true;
+      Object.keys(data).forEach(function(key) {
+        if (!SYNC_KEYS.has(key)) return;
+        const value = data[key] == null ? null : (typeof data[key] === 'string' ? data[key] : JSON.stringify(data[key]));
+        const old = localStorage.getItem(key);
+        if (value === null) { if (old !== null) { localStorage.removeItem(key); changed = true; } }
+        else if (old !== value) { localStorage.setItem(key, value); changed = true; }
+      });
+      applyingRemote = false; remoteSnapshot = data;
+      if (changed && reloadIfChanged) location.reload();
+      return changed;
+    }
+    async function loadRemote() {
+      const data = await request(ROOT + '.json');
+      const changed = data && typeof data === 'object' ? applyRemoteData(data, false) : false;
+      remoteSnapshot = data && typeof data === 'object' ? data : {};
+      return changed;
+    }
+    // Upload data lokal yang belum pernah ada di Firebase, tanpa menimpa data cloud.
+    async function syncLocalKeysMissingRemotely() {
+      if (!auth.currentUser) return;
+      const pendingWrites = [];
+      for (const key of SYNC_KEYS) {
+        if (Object.prototype.hasOwnProperty.call(remoteSnapshot, key)) continue;
+        const localValue = localStorage.getItem(key);
+        if (localValue !== null) pendingWrites.push(putRemote(key, localValue));
+      }
+      await Promise.all(pendingWrites);
+    }
+    async function putRemote(key, value) {
+      if (!auth.currentUser || !SYNC_KEYS.has(key) || applyingRemote) return;
+      try {
+        await request(ROOT + '/' + encodeURIComponent(key) + '.json', {
+          method: 'PUT', headers: { 'Content-Type': 'application/json' },
+          body: value === null ? 'null' : JSON.stringify(safeParse(value))
+        });
+      } catch(e) { console.warn('[Firebase] Gagal menyimpan ' + key + ':', e); }
+    }
+    const originalSetItem = Storage.prototype.setItem;
+    const originalRemoveItem = Storage.prototype.removeItem;
+    Storage.prototype.setItem = function(key, value) {
+      originalSetItem.call(this, key, value);
+      if (this === localStorage) putRemote(String(key), String(value));
+    };
+    Storage.prototype.removeItem = function(key) {
+      originalRemoveItem.call(this, key);
+      if (this === localStorage) putRemote(String(key), null);
+    };
+    function hasActiveEditor() { const el = document.activeElement; return !!el && el.matches('input,textarea,select,[contenteditable="true"]'); }
+    function startRealtime() {
+      if (stream) stream.close();
+      if (!auth.currentUser) return;
+      auth.currentUser.getIdToken().then(function(token) {
+        stream = new EventSource(ROOT + '.json?auth=' + encodeURIComponent(token));
+        stream.addEventListener('put', function(event) {
+          try {
+            const msg = JSON.parse(event.data);
+            if (msg.path === '/') applyRemoteData(msg.data, true);
+            else if (msg.path) {
+              const key = msg.path.split('/').filter(Boolean)[0];
+              if (SYNC_KEYS.has(key)) { const patch = {}; patch[key] = msg.data; applyRemoteData(patch, true); }
+            }
+          } catch(e) { console.warn('[Firebase] Realtime data error:', e); }
+        });
+        stream.addEventListener('cancel', function(){ console.warn('[Firebase] Akses realtime ditolak. Periksa Database Rules.'); });
+        stream.onerror = function(){ /* EventSource mencoba menyambung kembali otomatis. */ };
+      }).catch(function(e){ console.warn('[Firebase] Token realtime gagal:', e); });
+    }
+    window.firebaseSecureLogin = async function(password) {
+      if (document.getElementById('login-username').value.trim() !== LOGIN_USER) throw new Error('Username tidak valid');
+      await auth.signInWithEmailAndPassword(LOGIN_EMAIL, password);
+      await loadRemote();
+      await syncLocalKeysMissingRemotely();
+      startRealtime();
+    };
+    window.firebaseSecureLogout = async function() {
+      if (stream) { stream.close(); stream = null; }
+      await auth.signOut();
+    };
+    auth.onAuthStateChanged(async function(user) {
+      if (!user) { document.body.classList.remove('app-authenticated'); if(stream) { stream.close(); stream = null; } return; }
+      try {
+        const changed = await loadRemote();
+        await syncLocalKeysMissingRemotely();
+        if (changed) { location.reload(); return; }
+        document.body.classList.add('app-authenticated');
+        startRealtime();
+      } catch(e) {
+        console.error('[Firebase] Tidak dapat memuat data setelah login:', e);
+        document.body.classList.remove('app-authenticated');
+        const err = document.getElementById('login-error');
+        if (err) { err.textContent = 'Login berhasil, tetapi database menolak akses. Periksa aturan Firebase Realtime Database.'; err.style.display = 'block'; }
+      }
+    });
+    document.addEventListener('focusout', function() {
+      if (deferredReload) setTimeout(function(){ if(deferredReload && !hasActiveEditor()) { deferredReload = false; location.reload(); } }, 1500);
+    });
+  })();
+  </script>
+
+  <!-- SCRIPT UTAMA -->
+  <script>
+    // Initial Master Data from Uploaded Excel Sheet1
+    let masterKegiatan = [
+      "Administrasi Umum Perangkat Daerah",
+      "Kegiatan Pemberdayaan Kelurahan"
+    ];
+
+    let masterSubKegiatan = [
+      "Pembangunan Sarana dan Prasarana Kelurahan",
+      "Pemberdayaan Masyaralat Di Kelurahan",
+      "Peningkatan Partisipasi Masyarakat dalam Forum Musyawarah Perencanaan Pembangunan",
+      "Penyedian Bahan Logistik Kantor",
+      "Penyedian Barang Cetakan dan Penggandaan",
+      "Penyediaan Komponen Instalasi Listrik/Penerangan Bangunan Kantor",
+      "Penyediaan Peralatan dan Perlengkapan Kantor",
+      "Penyediaan Peralatan Rumah Tangga"
+    ];
+
+    const PEJABAT_KEY = 'si_master_pejabat';
+    let masterPejabat = JSON.parse(localStorage.getItem(PEJABAT_KEY) || 'null') || [
+      { nama: "IRAWAN, SE", nip: "197602282010011001", jabatan: "Pejabat Pelaksana Teknis Kegiatan" },
+      { nama: "IDA MARYANI, S.KOM", nip: "198504012010012020", jabatan: "Pejabat Pelaksana Teknis Kegiatan" },
+      { nama: "MARI HASTUTI, SE", nip: "197603191996032001", jabatan: "Bendahara Pengeluaran" }
+    ];
+    const PA_KEY = 'si_pengguna_anggaran';
+    let penggunaAnggaran = JSON.parse(localStorage.getItem(PA_KEY) || 'null') || { nama: 'IMA RATNASARI, S.E', nip: '198101292010012007' };
+
+    // Local Storage or Default Transaksi Database
+    let databasePengajuan = JSON.parse(localStorage.getItem('si_database')) || [
+      {
+        id: "1",
+        tanggal: "2026-10-06",
+        noUrut: "001",
+        noSurat: "001/7.01.2.13.0.00.35.0010/SI/PNG/2026",
+        kegiatan: "Administrasi Umum Perangkat Daerah",
+        subkegiatan: "Penyedian Bahan Logistik Kantor",
+        pptk: "IRAWAN, SE",
+        nip: "197602282010011001",
+        nominal: 5000000,
+        terbilang: "Lima Juta Rupiah",
+        keterangan: "Pembelian ATK dan Konsumsi Rapat Bulanan"
+      }
+    ];
+
+    document.addEventListener("DOMContentLoaded", () => {
+      // Set default tanggal hari ini
+      document.getElementById('input-tanggal').valueAsDate = new Date();
+      updateSIBulanDanNomor();
+      initDropdowns();
+      initMonthlySelectors();
+      renderMasterList();
+      renderTable();
+  // Initialize integrated Lampiran module
+      initLampiran();
+      npdInit();
+    });
+
+    function monthLabel(m){ if(!/^\d{4}-\d{2}$/.test(String(m||''))) return '-'; return new Date(m+'-01T00:00:00').toLocaleDateString('id-ID',{month:'long',year:'numeric'}); }
+    function getNextSINo(){
+      const used=new Set((Array.isArray(databasePengajuan)?databasePengajuan:[]).map(d=>parseInt(String(d.noUrut||d.noSurat||'').match(/^\d+/)?.[0]||'0',10)).filter(n=>n>0));
+      let n=1; while(used.has(n)) n++; return String(n).padStart(3,'0');
+    }
+    function updateSIBulanDanNomor(){
+      const t=document.getElementById('input-tanggal')?.value||'';
+      const b=document.getElementById('input-bulan-si'); if(b)b.value=t.slice(0,7);
+      const n=document.getElementById('input-no-urut'); if(n)n.value=getNextSINo();
+    }
+    function initMonthlySelectors(){
+      const ids=['si-bulan-rekap','lamp-bulan-rekap','npd-bulan-rekap','kk-bulan-rekap'];
+      const allMonths=new Set();
+      try{JSON.parse(localStorage.getItem('si_database')||'[]').forEach(x=>{const m=x.bulan||(x.tanggal||'').slice(0,7);if(/^\d{4}-\d{2}$/.test(m))allMonths.add(m)})}catch(e){}
+      try{JSON.parse(localStorage.getItem('lampiran_database')||'[]').forEach(x=>{if(/^\d{4}-\d{2}$/.test(x.bulan))allMonths.add(x.bulan)})}catch(e){}
+      try{JSON.parse(localStorage.getItem('npd_database_v1')||'[]').forEach(x=>{if(/^\d{4}-\d{2}$/.test(x.month))allMonths.add(x.month)})}catch(e){}
+      const now=new Date(), current=`${now.getFullYear()}-${String(now.getMonth()+1).padStart(2,'0')}`; allMonths.add(current);
+      for(const id of ids){const el=document.getElementById(id);if(!el)continue;const old=el.value;el.innerHTML=[...allMonths].sort().reverse().map(m=>`<option value="${m}">${monthLabel(m)}</option>`).join('');el.value=allMonths.has(old)?old:current;}
+    }
+    function printMonthlyReport(title,month,content,signatures=''){
+      if(!month){alert('Pilih bulan terlebih dahulu.');return;}
+      const w=window.open('','_blank'); if(!w){alert('Izinkan pop-up browser untuk mencetak rekap bulanan.');return;}
+      w.document.write(`<!doctype html><html lang="id"><head><meta charset="utf-8"><title>${title} - ${monthLabel(month)}</title><style>body{font-family:Arial,sans-serif;color:#111;margin:22px;font-size:11px}h2,h3{text-align:center;margin:4px}p.meta{text-align:center;margin:5px 0 18px}table{width:100%;border-collapse:collapse;margin-top:10px}th,td{border:1px solid #222;padding:5px;vertical-align:top}th{background:#eee}.right{text-align:right}.center{text-align:center}.sign{display:flex;justify-content:space-around;gap:40px;margin-top:45px;page-break-inside:avoid;text-align:center}.sign div{min-width:220px}.space{height:60px}.total{font-weight:bold}@media print{button{display:none}body{margin:10mm}}</style></head><body><h2>KELURAHAN PANARAGAN</h2><h3>${title}</h3><p class="meta">Bulan: <b>${monthLabel(month)}</b></p>${content}${signatures}<script>window.onload=()=>setTimeout(()=>window.print(),300)<\/script></body></html>`);
+      w.document.close();
+    }
+    function monthlySignatures(extra=''){
+      const pa=penggunaAnggaran||{}; const p=masterPejabat||[]; const pptk=p.find(x=>x.nama===extra)||p.find(x=>/pelaksana teknis kegiatan/i.test(x.jabatan||''))||p[0]||{};
+      return `<div class="sign"><div>Mengetahui,<br>Pengguna Anggaran<div class="space"></div><b><u>${esc(pa.nama||'-')}</u></b><br>NIP. ${esc(pa.nip||'-')}</div><div>Pejabat Pelaksana Teknis Kegiatan<div class="space"></div><b><u>${esc(extra||pptk.nama||'-')}</u></b><br>NIP. ${esc(pptk.nip||'-')}</div></div>`;
+    }
+    function printMonthlySI(month){
+      const list=databasePengajuan.filter(d=>(d.bulan||(d.tanggal||'').slice(0,7))===month).slice().sort((a,b)=>(a.tanggal||'').localeCompare(b.tanggal||''));
+      if(!list.length){alert('Belum ada transaksi S.I untuk bulan '+monthLabel(month)+'.');return;}
+      const rows=list.map((d,i)=>`<tr><td class="center">${i+1}</td><td>${esc(d.noSurat)}</td><td>${esc(d.tanggal)}</td><td>${esc(d.kegiatan)}</td><td>${esc(d.subkegiatan)}</td><td>${esc(d.pptk)}</td><td class="right">${Number(d.nominal||0).toLocaleString('id-ID')}</td><td>${esc(d.keterangan||'')}</td></tr>`).join('');
+      const total=list.reduce((a,d)=>a+Number(d.nominal||0),0);
+      printMonthlyReport('REKAP PENGAJUAN STANDING INSTRUCTION',month,`<table><thead><tr><th>No</th><th>Nomor S.I</th><th>Tanggal</th><th>Kegiatan</th><th>Sub Kegiatan</th><th>PPTK</th><th>Nominal (Rp)</th><th>Keterangan</th></tr></thead><tbody>${rows}<tr class="total"><td colspan="6" class="right">TOTAL BULANAN</td><td class="right">${total.toLocaleString('id-ID')}</td><td>${list.length} transaksi</td></tr></tbody></table>`,monthlySignatures(list[list.length-1]?.pptk||''));
+    }
+    function printMonthlyLampiran(month){
+      const list=db.filter(d=>d.bulan===month).slice().sort((a,b)=>(a.tanggal||'').localeCompare(b.tanggal||''));
+      if(!list.length){alert('Belum ada Lampiran tersimpan untuk bulan '+monthLabel(month)+'.');return;}
+      let body='',idx=1,tot={jumlah:0,negosiasi:0,ppn:0,p21:0,p22:0,p23:0,pot:0,bayar:0};
+      list.forEach((d,j)=>{body+=`<tr><td colspan="14"><b>Transaksi ${j+1}</b> — S.I: ${esc(d.siNo||'-')} | ${esc(d.tanggal||'')} | ${esc(d.subkegiatan||'')}</td></tr>`;(d.rows||[]).forEach(r=>{const pot=Number(r.negosiasi||0)+Number(r.ppn||0)+Number(r.p21||0)+Number(r.p22||0)+Number(r.p23||0),bayar=Math.max(0,Number(r.jumlah||0)-pot);tot.jumlah+=Number(r.jumlah||0);tot.negosiasi+=Number(r.negosiasi||0);tot.ppn+=Number(r.ppn||0);tot.p21+=Number(r.p21||0);tot.p22+=Number(r.p22||0);tot.p23+=Number(r.p23||0);tot.pot+=pot;tot.bayar+=bayar;body+=`<tr><td>${idx++}</td><td>${esc(r.kode)}</td><td>${esc(r.uraian)}</td><td>${esc(r.penerima)}</td><td>${esc(r.bank)}</td><td>${esc(r.rek)}</td><td class="right">${Number(r.jumlah||0).toLocaleString('id-ID')}</td><td class="right">${Number(r.negosiasi||0).toLocaleString('id-ID')}</td><td class="right">${Number(r.ppn||0).toLocaleString('id-ID')}</td><td class="right">${Number(r.p21||0).toLocaleString('id-ID')}</td><td class="right">${Number(r.p22||0).toLocaleString('id-ID')}</td><td class="right">${Number(r.p23||0).toLocaleString('id-ID')}</td><td class="right">${pot.toLocaleString('id-ID')}</td><td class="right">${bayar.toLocaleString('id-ID')}</td></tr>`})});
+      body+=`<tr class="total"><td colspan="6" class="right">TOTAL BULANAN</td><td class="right">${tot.jumlah.toLocaleString('id-ID')}</td><td class="right">${tot.negosiasi.toLocaleString('id-ID')}</td><td class="right">${tot.ppn.toLocaleString('id-ID')}</td><td class="right">${tot.p21.toLocaleString('id-ID')}</td><td class="right">${tot.p22.toLocaleString('id-ID')}</td><td class="right">${tot.p23.toLocaleString('id-ID')}</td><td class="right">${tot.pot.toLocaleString('id-ID')}</td><td class="right">${tot.bayar.toLocaleString('id-ID')}</td></tr>`;
+      printMonthlyReport('REKAP LAMPIRAN TRANSAKSI',month,`<table><thead><tr><th>No</th><th>Kode Rekening</th><th>Uraian</th><th>Penerima</th><th>Bank</th><th>Rekening</th><th>Jumlah</th><th>Negosiasi</th><th>PPN</th><th>PPh21</th><th>PPh22</th><th>PPh23</th><th>Potongan</th><th>Dibayarkan</th></tr></thead><tbody>${body}</tbody></table>`,monthlySignatures(activeSI?.pptk||''));
+    }
+    function saveMonthlyNPDSnapshot(){
+      const month=document.getElementById('npd-bulan-pelaporan')?.value||(document.getElementById('npd-tanggal')?.value||'').slice(0,7);
+      const item={id:Date.now(),month,nomor:document.getElementById('npd-nomor')?.value||'',tanggal:document.getElementById('npd-tanggal')?.value||'',jenis:document.querySelector('input[name="npd-jenis"]:checked')?.value||'',pptk:document.getElementById('npd-pptk')?.value||'',program:document.getElementById('npd-program')?.value||'',kegiatan:document.getElementById('npd-kegiatan')?.value||'',subkegiatan:document.getElementById('npd-subkegiatan')?.value||'',rows:JSON.parse(JSON.stringify(npdRows||[]))};
+      let arr=[];try{arr=JSON.parse(localStorage.getItem('npd_database_v1')||'[]')}catch(e){};arr=Array.isArray(arr)?arr:[];arr=arr.filter(x=>!(x.nomor===item.nomor&&x.month===item.month));arr.unshift(item);localStorage.setItem('npd_database_v1',JSON.stringify(arr));return item;
+    }
+    function getMonthlyNPD(month){try{return JSON.parse(localStorage.getItem('npd_database_v1')||'[]').filter(x=>x.month===month)}catch(e){return []}}
+    function printMonthlyNPD(month){
+      const list=getMonthlyNPD(month);if(!list.length){alert('Belum ada NPD yang disimpan melalui tombol Simpan & Pratinjau NPD untuk bulan '+monthLabel(month)+'.');return;}
+      let body='',i=1,total=0;list.slice().reverse().forEach((d,j)=>{body+=`<tr><td colspan="6"><b>NPD ${j+1}</b> — ${esc(d.nomor)} | ${esc(d.tanggal)} | ${esc(d.subkegiatan)} | PPTK: ${esc(d.pptk)}</td></tr>`;(d.rows||[]).filter(r=>r.jenis==='detail').forEach(r=>{const kini=Number(r.kini||0);total+=kini;body+=`<tr><td>${i++}</td><td>${esc(r.kode)}</td><td>${esc(r.uraian)}</td><td class="right">${Number(r.anggaran||0).toLocaleString('id-ID')}</td><td class="right">${Number(r.lalu||0).toLocaleString('id-ID')}</td><td class="right">${kini.toLocaleString('id-ID')}</td></tr>`})});
+      body+=`<tr class="total"><td colspan="5" class="right">TOTAL PENCairan BULANAN</td><td class="right">${total.toLocaleString('id-ID')}</td></tr>`;
+      printMonthlyReport('REKAP NOTA PENCAIRAN DANA (NPD)',month,`<table><thead><tr><th>No</th><th>Kode Rekening</th><th>Uraian</th><th>Anggaran (Rp)</th><th>Bulan Lalu (Rp)</th><th>Bulan Ini (Rp)</th></tr></thead><tbody>${body}</tbody></table>`,monthlySignatures(list[list.length-1]?.pptk||''));
+    }
+    function printMonthlyKK(month){
+      const list=getMonthlyNPD(month);if(!list.length){alert('Belum ada data NPD tersimpan untuk Kartu Kendali bulan '+monthLabel(month)+'.');return;}
+      const agg=new Map();let pagu=0,lalu=0,kini=0;list.forEach(d=>(d.rows||[]).filter(r=>r.jenis==='detail').forEach(r=>{const k=(r.kode||'')+'|'+(r.uraian||'');if(!agg.has(k))agg.set(k,{kode:r.kode||'',uraian:r.uraian||'',anggaran:Number(r.anggaran||0),lalu:0,kini:0});const a=agg.get(k);a.anggaran=Math.max(a.anggaran,Number(r.anggaran||0));a.lalu=Math.max(a.lalu,Number(r.lalu||0));a.kini+=Number(r.kini||0)}));
+      let i=1,body='';agg.forEach(r=>{pagu+=r.anggaran;lalu+=r.lalu;kini+=r.kini;body+=`<tr><td>${i++}</td><td>${esc(r.kode)}</td><td>${esc(r.uraian)}</td><td class="right">${r.anggaran.toLocaleString('id-ID')}</td><td class="right">${r.lalu.toLocaleString('id-ID')}</td><td class="right">${r.kini.toLocaleString('id-ID')}</td><td class="right">${(r.lalu+r.kini).toLocaleString('id-ID')}</td><td class="right">${Math.max(0,r.anggaran-r.lalu-r.kini).toLocaleString('id-ID')}</td></tr>`});
+      body+=`<tr class="total"><td colspan="3" class="right">TOTAL</td><td class="right">${pagu.toLocaleString('id-ID')}</td><td class="right">${lalu.toLocaleString('id-ID')}</td><td class="right">${kini.toLocaleString('id-ID')}</td><td class="right">${(lalu+kini).toLocaleString('id-ID')}</td><td class="right">${Math.max(0,pagu-lalu-kini).toLocaleString('id-ID')}</td></tr>`;
+      printMonthlyReport('KARTU KENDALI KEGIATAN - REKAP BULANAN',month,`<table><thead><tr><th>No</th><th>Kode Rekening</th><th>Uraian</th><th>Pagu</th><th>Bulan Lalu</th><th>Bulan Ini</th><th>Kumulatif</th><th>Sisa</th></tr></thead><tbody>${body}</tbody></table>`,monthlySignatures(list[list.length-1]?.pptk||''));
+    }
+
+    function getSISettingData() {
+      // Satu sumber relasi untuk S.I, Lampiran, dan NPD.
+      return (typeof NPD_SETTING !== 'undefined' && Array.isArray(NPD_SETTING)) ? NPD_SETTING : [];
+    }
+
+    function findSISetting(kegiatan, subkegiatan) {
+      const data = getSISettingData();
+      const norm = v => String(v || '').toLowerCase()
+        .replace(/penyedian/g, 'penyediaan')
+        .replace(/masyaralat/g, 'masyarakat')
+        .replace(/[^a-z0-9]+/g, ' ');
+      return data.find(x => norm(x.kegiatan) === norm(kegiatan) && norm(x.sub) === norm(subkegiatan)) ||
+             data.find(x => norm(x.kegiatan) === norm(kegiatan)) || null;
+    }
+
+    function refreshSISubKegiatan(preferredSub) {
+      const kegSelect = document.getElementById('input-kegiatan');
+      const subSelect = document.getElementById('input-subkegiatan');
+      if(!kegSelect || !subSelect) return;
+
+      const kegiatan = kegSelect.value;
+      const data = getSISettingData().filter(x => x.kegiatan === kegiatan);
+      subSelect.innerHTML = data.length
+        ? data.map(x => `<option value="${esc(x.sub)}">${esc(x.sub)}</option>`).join('')
+        : '<option value="">-- Sub Kegiatan belum tersedia --</option>';
+
+      if(preferredSub) {
+        const exact = data.find(x => x.sub === preferredSub);
+        if(exact) subSelect.value = exact.sub;
+      }
+    }
+
+    function initDropdowns() {
+      const kegSelect = document.getElementById('input-kegiatan');
+      const siSetting = getSISettingData();
+      const activities = [...new Map(siSetting.map(x => [x.kegiatan, x])).values()];
+
+      // Kegiatan menjadi sumber utama. Sub Kegiatan hanya menampilkan anggota
+      // dari Kegiatan yang sedang dipilih.
+      kegSelect.innerHTML = activities.map(x => `<option value="${esc(x.kegiatan)}">${esc(x.kegiatan)}</option>`).join('');
+      kegSelect.onchange = () => refreshSISubKegiatan();
+      refreshSISubKegiatan();
+
+      const pptkSelect = document.getElementById('input-pptk');
+      pptkSelect.innerHTML = masterPejabat.map((p, idx) => `<option value="${idx}">${p.nama} (${p.jabatan})</option>`).join('');
+
+      const paNama=document.getElementById('m-pa-nama');
+      const paNip=document.getElementById('m-pa-nip');
+      if(paNama) paNama.value=penggunaAnggaran.nama||'';
+      if(paNip) paNip.value=penggunaAnggaran.nip||'';
+      updateNipPreview();
+    }
+
+    function updateNipPreview() {
+      const idx = document.getElementById('input-pptk').value;
+      const p = masterPejabat[idx];
+      if(p) {
+        document.getElementById('preview-nip').innerText = `NIP: ${p.nip}`;
+      }
+    }
+
+    // Terbilang Converter Function (Bahasa Indonesia)
+    function terbilang(nilai) {
+      const bilangan = ["", "Satu", "Dua", "Tiga", "Empat", "Lima", "Enam", "Tujuh", "Delapan", "Sembilan", "Sepuluh", "Sebelas"];
+      nilai = Math.floor(nilai);
+      
+      if (nilai < 12) return " " + bilangan[nilai];
+      else if (nilai < 20) return terbilang(nilai - 10) + " Belas";
+      else if (nilai < 100) return terbilang(Math.floor(nilai / 10)) + " Puluh" + terbilang(nilai % 10);
+      else if (nilai < 200) return " Seratus" + terbilang(nilai - 100);
+      else if (nilai < 1000) return terbilang(Math.floor(nilai / 100)) + " Ratus" + terbilang(nilai % 100);
+      else if (nilai < 2000) return " Seribu" + terbilang(nilai - 1000);
+      else if (nilai < 1000000) return terbilang(Math.floor(nilai / 1000)) + " Ribu" + terbilang(nilai % 1000);
+      else if (nilai < 1000000000) return terbilang(Math.floor(nilai / 1000000)) + " Juta" + terbilang(nilai % 1000000);
+      else if (nilai < 1000000000000) return terbilang(Math.floor(nilai / 1000000000)) + " Milyar" + terbilang(nilai % 1000000000);
+      return "";
+    }
+
+    function formatRupiahInput(el) {
+      let val = el.value.replace(/[^0-9]/g, '');
+      if(!val) val = '0';
+      const num = parseInt(val, 10);
+      el.value = num.toLocaleString('id-ID');
+      
+      const txtTerbilang = num > 0 ? (terbilang(num).trim() + " Rupiah") : "-";
+      document.getElementById('text-terbilang').innerText = txtTerbilang;
+    }
+
+    function handleFormSubmit(e) {
+      e.preventDefault();
+
+      const tgl = document.getElementById('input-tanggal').value;
+      const noUrut = getNextSINo();
+      document.getElementById('input-no-urut').value = noUrut;
+      const fullNoSurat = `${noUrut}/7.01.2.13.0.00.35.0010/SI/PNG/2026`;
+      
+      const pptkIdx = document.getElementById('input-pptk').value;
+      const pptkObj = masterPejabat[pptkIdx];
+
+      const kegiatan = document.getElementById('input-kegiatan').value;
+      const subkegiatan = document.getElementById('input-subkegiatan').value;
+      const settingSI = findSISetting(kegiatan, subkegiatan);
+      if(!settingSI) {
+        alert('Kegiatan dan Sub Kegiatan belum memiliki hubungan pada Setting.');
+        return;
+      }
+      
+      const rawNominal = document.getElementById('input-nominal').value.replace(/[^0-9]/g, '');
+      const nominalNum = parseInt(rawNominal || '0', 10);
+      const textTerbilang = document.getElementById('text-terbilang').innerText;
+      const keterangan = document.getElementById('input-keterangan').value || "Terlampir rincian pengajuan";
+
+      const dataBaru = {
+        id: Date.now().toString(),
+        tanggal: tgl,
+        bulan: (tgl||'').slice(0,7),
+        noUrut: noUrut,
+        noSurat: fullNoSurat,
+        kegiatan: kegiatan,
+        subkegiatan: subkegiatan,
+        pptk: pptkObj.nama,
+        nip: pptkObj.nip,
+        nominal: nominalNum,
+        terbilang: textTerbilang,
+        keterangan: keterangan
+      };
+
+      databasePengajuan.unshift(dataBaru);
+      localStorage.setItem('si_database', JSON.stringify(databasePengajuan));
+      updateSIBulanDanNomor();
+      
+      renderTable();
+      previewFORM_F4(dataBaru);
+    }
+
+    function previewFORM_F4(data) {
+      // Format tanggal Indonesia
+      const dateObj = new Date(data.tanggal);
+      const options = { day: 'numeric', month: 'Long', year: 'numeric' };
+      const formattedDate = dateObj.toLocaleDateString('id-ID', { day: '2-digit', month: 'long', year: 'numeric' });
+
+      document.getElementById('f4-tanggal-cetak').innerText = formattedDate;
+      document.getElementById('f4-no-surat').innerText = data.noSurat;
+      document.getElementById('f4-kegiatan').innerText = data.kegiatan;
+      document.getElementById('f4-subkegiatan').innerText = data.subkegiatan;
+      document.getElementById('f4-pptk-nama').innerText = data.pptk;
+      document.getElementById('f4-nominal').innerText = `Rp ${data.nominal.toLocaleString('id-ID')},-`;
+      document.getElementById('f4-terbilang').innerText = `( ${data.terbilang} )`;
+      document.getElementById('f4-keterangan').innerText = data.keterangan;
+      // Kuasa Pengguna Anggaran pada FORM F4 harus sama dengan
+      // Pengguna Anggaran yang tersimpan pada Setting/Lampiran.
+      const pa = penggunaAnggaran || {};
+      document.getElementById('f4-pa-nama').innerText = pa.nama || '-';
+      document.getElementById('f4-pa-nip').innerText = `NIP. ${pa.nip || '-'}`;
+
+      document.getElementById('f4-ttd-nama').innerText = data.pptk;
+      document.getElementById('f4-ttd-nip').innerText = `NIP. ${data.nip}`;
+
+      switchTab('preview');
+    }
+
+    function renderTable() {
+      const q = document.getElementById('search-query').value.toLowerCase();
+      const tbody = document.getElementById('table-body');
+      
+      const filtered = databasePengajuan.filter(d => 
+        d.noSurat.toLowerCase().includes(q) || d.pptk.toLowerCase().includes(q) || d.subkegiatan.toLowerCase().includes(q) || String(d.bulan||d.tanggal||'').includes(q)
+      );
+
+      if(filtered.length === 0) {
+        tbody.innerHTML = `<tr><td colspan="7" class="px-4 py-8 text-center text-slate-400">Belum ada data pengajuan.</td></tr>`;
+        return;
+      }
+
+      tbody.innerHTML = filtered.map(d => `
+        <tr class="hover:bg-slate-50/80 transition">
+          <td class="px-5 py-4 font-mono font-bold text-xs text-slate-900">${d.noSurat}</td>
+          <td class="px-5 py-4 text-xs">${d.tanggal}</td>
+          <td class="px-5 py-4 text-xs">${monthLabel(d.bulan||String(d.tanggal||'').slice(0,7))}</td>
+          <td class="px-5 py-4 text-xs max-w-xs truncate">${d.subkegiatan}</td>
+          <td class="px-5 py-4 text-xs font-semibold text-slate-800">${d.pptk}</td>
+          <td class="px-5 py-4 text-xs font-bold text-slate-900 text-right">Rp ${d.nominal.toLocaleString('id-ID')}</td>
+          <td class="px-5 py-4 text-xs text-center space-x-1.5">
+            <button onclick='previewFORM_F4(${JSON.stringify(d)})' class="px-3 py-1.5 bg-emerald-100 hover:bg-emerald-200 text-emerald-800 font-bold rounded-xl transition shadow-sm">
+              <i class="fa-solid fa-eye mr-1"></i> Cetak F4
+            </button>
+            <button onclick='printRekapGabungan(${JSON.stringify(d)})' class="px-3 py-1.5 bg-cyan-100 hover:bg-cyan-200 text-cyan-800 font-bold rounded-xl transition shadow-sm">
+              <i class="fa-solid fa-layer-group mr-1"></i> Paket Lengkap
+            </button>
+            <button onclick="hapusData('${d.id}')" class="px-2.5 py-1.5 bg-rose-100 hover:bg-rose-200 text-rose-700 rounded-xl transition shadow-sm">
+              <i class="fa-solid fa-trash"></i>
+            </button>
+          </td>
+        </tr>
+      `).join('');
+    }
+
+    function hapusData(id) {
+      if(confirm('Apakah Anda yakin ingin menghapus pengajuan ini?')) {
+        databasePengajuan = databasePengajuan.filter(d => d.id !== id);
+        localStorage.setItem('si_database', JSON.stringify(databasePengajuan));
+        renderTable();
+      }
+    }
+
+    function renderMasterList() {
+      const pList = document.getElementById('master-pejabat-list');
+      pList.innerHTML = masterPejabat.map((p,i) => `
+        <li class="bg-white p-3.5 rounded-xl border border-slate-200 shadow-sm flex justify-between items-center gap-3">
+          <div>
+            <p class="font-bold text-slate-900">${esc(p.nama)}</p>
+            <p class="text-slate-500 font-mono text-[11px] mt-0.5">NIP: ${esc(p.nip)} | ${esc(p.jabatan)}</p>
+          </div>
+          <div class="flex gap-1.5 shrink-0">
+            <button onclick="editPejabat(${i})" class="px-2.5 py-1.5 bg-amber-100 hover:bg-amber-200 text-amber-800 rounded-lg transition"><i class="fa-solid fa-pen"></i></button>
+            <button onclick="deletePejabat(${i})" class="px-2.5 py-1.5 bg-rose-100 hover:bg-rose-200 text-rose-700 rounded-lg transition"><i class="fa-solid fa-trash"></i></button>
+          </div>
+        </li>
+      `).join('');
+
+      const sList = document.getElementById('master-sub-list');
+      sList.innerHTML = masterSubKegiatan.map(s => `
+        <li class="bg-white p-3 rounded-xl border border-slate-200 shadow-sm flex items-center text-slate-700 font-medium">
+          <i class="fa-solid fa-angle-right text-teal-500 mr-2.5 text-xs font-bold"></i> ${s}
+        </li>
+      `).join('');
+    }
+
+    function savePenggunaAnggaran(){
+      const nama=document.getElementById('m-pa-nama').value.trim().toUpperCase();
+      const nip=document.getElementById('m-pa-nip').value.trim();
+      if(!nama||!nip){alert('Nama dan NIP Pengguna Anggaran wajib diisi.');return;}
+      penggunaAnggaran={nama,nip};
+      localStorage.setItem(PA_KEY,JSON.stringify(penggunaAnggaran));
+      renderLampiranSignatures();
+      alert('Pengguna Anggaran berhasil disimpan.');
+    }
+
+    let editingPejabatIndex = -1;
+    function savePejabat(){
+      const nama=document.getElementById('m-pejabat-nama').value.trim().toUpperCase();
+      const nip=document.getElementById('m-pejabat-nip').value.trim();
+      const jabatan=document.getElementById('m-pejabat-jabatan').value.trim();
+      if(!nama||!nip||!jabatan){alert('Nama, NIP dan jabatan pejabat wajib diisi.');return;}
+      const obj={nama,nip,jabatan};
+      if(editingPejabatIndex>=0) masterPejabat[editingPejabatIndex]=obj;
+      else masterPejabat.push(obj);
+      localStorage.setItem(PEJABAT_KEY,JSON.stringify(masterPejabat));
+      cancelEditPejabat();
+      initDropdowns();
+      document.getElementById('form-pengajuan')?.addEventListener('reset',()=>setTimeout(updateSIBulanDanNomor,0));
+      renderMasterList();
+    }
+    function editPejabat(i){
+      const p=masterPejabat[i]; if(!p)return;
+      editingPejabatIndex=i;
+      document.getElementById('m-pejabat-nama').value=p.nama;
+      document.getElementById('m-pejabat-nip').value=p.nip;
+      document.getElementById('m-pejabat-jabatan').value=p.jabatan;
+      document.getElementById('btn-save-pejabat').innerHTML='<i class="fa-solid fa-save mr-1"></i> Simpan Perubahan';
+      document.getElementById('btn-cancel-pejabat').classList.remove('hidden');
+    }
+    function cancelEditPejabat(){
+      editingPejabatIndex=-1;
+      document.getElementById('m-pejabat-nama').value='';
+      document.getElementById('m-pejabat-nip').value='';
+      document.getElementById('m-pejabat-jabatan').value='';
+      document.getElementById('btn-save-pejabat').innerHTML='<i class="fa-solid fa-plus mr-1"></i> Tambah Pejabat';
+      document.getElementById('btn-cancel-pejabat').classList.add('hidden');
+    }
+    function deletePejabat(i){
+      if(masterPejabat.length<=1){alert('Minimal harus ada 1 pejabat.');return;}
+      if(!confirm('Hapus pejabat ini dari daftar?'))return;
+      masterPejabat.splice(i,1);
+      localStorage.setItem(PEJABAT_KEY,JSON.stringify(masterPejabat));
+      initDropdowns();
+      renderMasterList();
+    }
+
+    function switchTab(tab) {
+      ['input', 'lampiran', 'npd', 'kk', 'database', 'preview', 'lampiran-preview', 'master'].forEach(t => {
+        const el = document.getElementById(`tab-${t}`);
+        if(el) el.classList.add('hidden');
+        const nav = document.getElementById(`nav-${t}`);
+        if(nav) {
+          nav.classList.remove('bg-white', 'text-emerald-700', 'shadow-md');
+          nav.classList.add('text-white', 'hover:bg-white/10');
+        }
+      });
+      const target = document.getElementById(`tab-${tab}`);
+      if(target) target.classList.remove('hidden');
+      const activeNav = document.getElementById(`nav-${tab}`);
+      if(activeNav) {
+        activeNav.classList.add('bg-white', 'text-emerald-700', 'shadow-md');
+        activeNav.classList.remove('text-white', 'hover:bg-white/10');
+      }
+      if(tab==='lampiran') { loadSIData(); renderRows(); renderLampiranMaster(); }
+      if(tab==='npd') { npdSyncFromLatestSI(); }
+      if(tab==='npd') { npdInit(); npdRefreshPreview(); }
+      if(tab==='kk') { npdInit(); kkRefreshPreview(); }
+      if(tab==='database') { renderTable(); initMonthlySelectors(); }
+      if(['lampiran','npd','kk'].includes(tab)) initMonthlySelectors();
+    }
+
+    function exportToCSV() {
+      if(databasePengajuan.length === 0) return alert('Tidak ada data untuk diexport.');
+      
+      let csv = 'No Surat,Tanggal,Kegiatan,Sub Kegiatan,PPTK,NIP,Nominal,Terbilang,Keterangan\n';
+      databasePengajuan.forEach(d => {
+        csv += `"${d.noSurat}","${d.tanggal}","${d.kegiatan}","${d.subkegiatan}","${d.pptk}","${d.nip}","${d.nominal}","${d.terbilang}","${d.keterangan}"\n`;
+      });
+
+      const blob = new Blob([csv], { type: 'text/csv' });
+      const url = window.URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.setAttribute('href', url);
+      a.setAttribute('download', 'Rekap_Standing_Instruction_2026.csv');
+      a.click();
+    }
+  
+const REC_KEY='lampiran_recipients';
+const ITEM_KEY='lampiran_items';
+const DB_KEY='lampiran_database';
+
+let recipients=JSON.parse(localStorage.getItem(REC_KEY)||'null')||[
+ {nama:'MARI HASTUTI, SE',bank:'BJB',rek:'0019712109101'},
+ {nama:'IRAWAN, SE',bank:'BJB',rek:''},
+ {nama:'IDA MARYANI, S.KOM',bank:'BJB',rek:''}
+];
+
+// Master rincian diambil dari struktur Sheet1 Lampiran 2.xlsx dan dapat ditambah lewat Setting.
+let items=JSON.parse(localStorage.getItem(ITEM_KEY)||'null')||[
+ {subkegiatan:'2.13.01.2.06.0005 - Penyediaan Barang Cetakan dan Penggandaan',kode:'5.1.02.01.001.00024',uraian:'Belanja Cetak dan Penggandaan',pagu:1000000},
+ {subkegiatan:'2.13.01.2.06.0005 - Penyediaan Barang Cetakan dan Penggandaan',kode:'5.1.02.01.001.00024',uraian:'Penjilidan',pagu:1000000},
+ {subkegiatan:'2.13.01.2.06.0005 - Penyediaan Barang Cetakan dan Penggandaan',kode:'5.1.02.01.001.00024',uraian:'Penggandaan Fotocopy',pagu:1000000}
+];
+
+// Master DPA uji coba: Sub Kegiatan Percetakan dan Penggandaan.
+// Pagu mengikuti rekening detail pada DPA; nilai transaksi tetap diisi manual pada Lampiran.
+const DPA_DETAIL = [
+ {subkegiatan:'2.13.01.2.06.0005 - Penyediaan Barang Cetakan dan Penggandaan',kode:'5.1.02.01.001.00024',uraian:'Belanja Cetak dan Penggandaan',pagu:338400,detail:[{nama:'Spanduk',volume:4,satuan:'M2',harga:84600,jumlah:338400}]},
+ {subkegiatan:'2.13.01.2.06.0005 - Penyediaan Barang Cetakan dan Penggandaan',kode:'5.1.02.01.001.00024',uraian:'Penjilidan',pagu:43200,detail:[{nama:'Barang Cetakan - Penjilidan Biasa kecil 100 Lbr Uk. F4',volume:6,satuan:'Buah',harga:7200,jumlah:43200}]},
+ {subkegiatan:'2.13.01.2.06.0005 - Penyediaan Barang Cetakan dan Penggandaan',kode:'5.1.02.01.001.00024',uraian:'Penggandaan Fotocopy',pagu:618400,detail:[{nama:'Barang Cetakan - Penggandaan Fotocopy Ukuran A4 / F4',volume:1546,satuan:'Lembar',harga:400,jumlah:618400}]},
+
+ {subkegiatan:'2.13.01.2.06.0002 - Penyediaan Peralatan dan Perlengkapan Kantor',kode:'5.1.02.01.001.00024',uraian:'Belanja Alat/Bahan untuk Kegiatan Kantor-Alat Tulis Kantor',pagu:542700,detail:[{nama:'Isi Staples - Isi Hekter / Staples No. 3',volume:1,satuan:'Box',harga:40400,jumlah:40400},{nama:'Ordner Dan Map - Map Dinas Bahan Snelhekter Plastik',volume:1,satuan:'Pack',harga:30500,jumlah:30500},{nama:'Ordner Dan Map - Map Kertas Beruang Ukuran Folio',volume:20,satuan:'Buah',harga:3000,jumlah:60000},{nama:'Alat Tulis - Ballpoint Pilot Balliner',volume:2,satuan:'Lusin',harga:205900,jumlah:411800}]},
+ {subkegiatan:'2.13.01.2.06.0002 - Penyediaan Peralatan dan Perlengkapan Kantor',kode:'5.1.02.01.001.00025',uraian:'Belanja Alat/Bahan untuk Kegiatan Kantor- Kertas dan Cover',pagu:1389600,detail:[{nama:'Kertas HVS - Kertas Folio Hvs 70 Gr Isi 500 Lbr',volume:24,satuan:'Rim',harga:57900,jumlah:1389600}]},
+ {subkegiatan:'2.13.01.2.06.0002 - Penyediaan Peralatan dan Perlengkapan Kantor',kode:'5.1.02.01.001.00029',uraian:'Belanja Alat/Bahan untuk Kegiatan Kantor-Bahan Komputer',pagu:947700,detail:[{nama:'Lain-Lain Bahan Komputer - Tinta Printer Epson 003 (colour)',volume:3,satuan:'Botol',harga:109300,jumlah:327900},{nama:'Tinta/Toner Printer - Tinta Printer Epson 003 65 ml (black)',volume:6,satuan:'Botol',harga:103300,jumlah:619800}]},
+
+ {subkegiatan:'7.01.03.2.02.0003 - Pemberdayaan Masyarakat di Kelurahan',kode:'5.1.02.01.001.00024',uraian:'Belanja Cetak dan Penggandaan (Musrenbang) (Sarana dan Prasarana Kelurahan dan Pemberdayaan Masyarakat)',pagu:338400,detail:[{nama:'Belanja Cetak dan Penggandaan (Musrenbang) (Sarana dan Prasarana Kelurahan dan Pemberdayaan Masyarakat)',volume:4,satuan:'Meter',harga:84600,jumlah:338400}]},
+ {subkegiatan:'7.01.03.2.02.0003 - Pemberdayaan Masyarakat di Kelurahan',kode:'5.1.02.01.001.00024',uraian:'Belanja Fotocopy Sosialisasi Stunting (Musrenbang) (Sarana Prasarana Kelurahan dan Pemberdayaan Masyarakat)',pagu:321600,detail:[{nama:'Barang Cetakan - Penggandaan Fotocopy Ukuran A4 / F4',volume:804,satuan:'Lembar',harga:400,jumlah:321600}]},
+ {subkegiatan:'7.01.03.2.02.0003 - Pemberdayaan Masyarakat di Kelurahan',kode:'5.1.02.01.001.00043',uraian:'Telur Ayam Broiler',pagu:3040000,detail:[{nama:'Makanan/Sembako - Spesifikasi: Telur Ayam',volume:100,satuan:'Kg',harga:30400,jumlah:3040000}]},
+ {subkegiatan:'7.01.03.2.02.0003 - Pemberdayaan Masyarakat di Kelurahan',kode:'5.1.02.01.001.00052',uraian:'Belanja Snack Box Sosialisasi Pencegahan Stunting (Musrenbang) (Sarana dan Prasarana Kelurahan dan Pemberdayaan Masyarakat)',pagu:1500000,detail:[{nama:'Biaya Konsumsi Rapat - Spesifikasi: Snack',volume:100,satuan:'Per Orang',harga:15000,jumlah:1500000}]},
+ {subkegiatan:'7.01.03.2.02.0003 - Pemberdayaan Masyarakat di Kelurahan',kode:'5.1.02.01.001.00052',uraian:'Belanja Makan Sosialisasi Stunting (Musrenbang) (Sarana dan Prasarana Kelurahan dan Pemberdayaan Masyarakat)',pagu:3000000,detail:[{nama:'Biaya Konsumsi Rapat - Spesifikasi: Nasi Box',volume:100,satuan:'Per Orang',harga:30000,jumlah:3000000}]},
+ {subkegiatan:'7.01.03.2.02.0003 - Pemberdayaan Masyarakat di Kelurahan',kode:'5.1.02.02.001.00003',uraian:'Honorarium Narasumber Sosialisasi Pencegahan Stunting',pagu:1800000,detail:[{nama:'Honorarium Narasumber atau Pembahas - Pejabat Eselon III ke bawah yang disetarakan',volume:2,satuan:'Orang / Jam',harga:900000,jumlah:1800000}]},
+ {subkegiatan:'7.01.03.2.02.0003 - Pemberdayaan Masyarakat di Kelurahan',kode:'5.1.02.05.001.00008',uraian:'Honorarium BOP RT',pagu:163200000,detail:[{nama:'Biaya Operasional Pelaksanaan Kegiatan pada Kecamatan - Spesifikasi: Rukun Tetangga',volume:408,satuan:'Orang / Bulan',harga:400000,jumlah:163200000}]},
+ {subkegiatan:'7.01.03.2.02.0003 - Pemberdayaan Masyarakat di Kelurahan',kode:'5.1.02.05.001.00009',uraian:'Honorarium BOP RW',pagu:42000000,detail:[{nama:'Biaya Operasional Pelaksanaan Kegiatan pada Kecamatan - Spesifikasi: Rukun Warga',volume:84,satuan:'Orang / Bulan',harga:500000,jumlah:42000000}]},
+ {subkegiatan:'7.01.03.2.02.0003 - Pemberdayaan Masyarakat di Kelurahan',kode:'5.1.02.05.001.00011',uraian:'Honorarium BOP LPM',pagu:7200000,detail:[{nama:'Biaya Operasional Pelaksanaan Kegiatan pada Kecamatan - Spesifikasi: LPM',volume:12,satuan:'Orang / Bulan',harga:600000,jumlah:7200000}]},
+
+ {subkegiatan:'2.13.01.2.06.0004 - Penyediaan Bahan Logistik Kantor',kode:'5.1.02.01.001.00058',uraian:'Belanja Makanan dan Minuman Aktivitas Lapangan',pagu:26100000,detail:[{nama:'Nasi Box',volume:540,satuan:'Box',harga:30000,jumlah:16200000},{nama:'Snack',volume:540,satuan:'Box',harga:15000,jumlah:8100000},{nama:'Nasi Box (PERS GATHERING)',volume:40,satuan:'Per Orang',harga:30000,jumlah:1200000},{nama:'Snack (PERS GATHERING)',volume:40,satuan:'Per Orang',harga:15000,jumlah:600000}]},
+ {subkegiatan:'2.13.01.2.06.0004 - Penyediaan Bahan Logistik Kantor',kode:'5.1.02.02.001.00080',uraian:'Belanja Honorarium Penanggungjawaban Pengelola Keuangan',pagu:11560000,detail:[{nama:'Honorarium Bendahara Pengeluaran Pembantu (BPP)',volume:4,satuan:'Orang / Bulan',harga:430000,jumlah:1720000},{nama:'Honorarium KPA',volume:4,satuan:'Orang / Bulan',harga:1450000,jumlah:5800000},{nama:'Honorarium PPTK',volume:4,satuan:'Orang / Bulan',harga:1010000,jumlah:4040000}]},
+ {subkegiatan:'2.13.01.2.06.0004 - Penyediaan Bahan Logistik Kantor',kode:'5.1.02.04.001.00003',uraian:'Belanja Perjalanan Dinas Dalam Kota',pagu:3150000,detail:[{nama:'Uang Pengganti Transportasi Kegiatan (PERS GATHERING)',volume:30,satuan:'Orang / Hari',harga:105000,jumlah:3150000}]},
+ {subkegiatan:'7.01.03.2.02.0001 - Peningkatan Partisipasi Masyarakat dalam Forum Musyawarah Perencanaan Pembangunan di Kelurahan',kode:'5.1.02.01.001.00024',uraian:'Belanja Alat/Bahan untuk Kegiatan Kantor-Alat Tulis Kantor',pagu:90000,detail:[{nama:'Spanduk',volume:4,satuan:'Meter',harga:17900,jumlah:71600},{nama:'Penggandaan Fotocopy Ukuran A4 / F4',volume:46,satuan:'Lembar',harga:400,jumlah:18400}]},
+ {subkegiatan:'7.01.03.2.02.0001 - Peningkatan Partisipasi Masyarakat dalam Forum Musyawarah Perencanaan Pembangunan di Kelurahan',kode:'5.1.02.01.001.00052',uraian:'Belanja Makanan dan Minuman Rapat',pagu:3510000,detail:[{nama:'Nasi Box',volume:78,satuan:'Per Orang',harga:30000,jumlah:2340000},{nama:'Snack',volume:78,satuan:'Per Orang',harga:15000,jumlah:1170000}]},
+
+ // DPA 2026: Pembangunan Sarana dan Prasarana Kelurahan (DPA total Rp194.000.000)
+ {subkegiatan:'7.01.03.2.02.0002 - Pembangunan Sarana dan Prasarana Kelurahan',kode:'5.1.02.01.001.00024',uraian:'Belanja Cetak dan Penggandaan',pagu:1384000,detail:[
+   {nama:'Barang Cetakan - Penjilidan Spiral kecil 100 Lbr Uk. F4',volume:4,satuan:'Buah',harga:27900,jumlah:111600},
+   {nama:'Barang Cetakan - Penjilidan Buku Hard Cover, Color, Glossy, Ukuran A3 1 - 500 Lembar',volume:1,satuan:'Buku',harga:235400,jumlah:235400},
+   {nama:'Barang Cetakan - Penggandaan Fotocopy Ukuran A4 / F4',volume:1535,satuan:'Lembar',harga:400,jumlah:614000},
+   {nama:'Belanja Penggandaan Kegiatan Pembangunan Sarana dan Prasarana Kelurahan',volume:5,satuan:'Meter',harga:84600,jumlah:423000}
+ ]},
+ {subkegiatan:'7.01.03.2.02.0002 - Pembangunan Sarana dan Prasarana Kelurahan',kode:'5.1.02.02.008.00008',uraian:'Belanja Jasa Konsultansi Perencanaan Rekayasa-Jasa Desain Rekayasa untuk Pekerjaan Teknik Sipil Air',pagu:25354000,detail:[
+   {nama:'Perencanaan Konstruksi Pembangunan Bangunan Gedung Negara Klasifikasi Sederhana - Perencanaan Pemeliharaan Jalan Paving Blok RW.04',volume:1,satuan:'Paket',harga:25354000,jumlah:25354000}
+ ]},
+ {subkegiatan:'7.01.03.2.02.0002 - Pembangunan Sarana dan Prasarana Kelurahan',kode:'5.1.02.02.008.00021',uraian:'Belanja Jasa Konsultansi Pengawasan Rekayasa-Jasa Pengawas Pekerjaan Konstruksi Teknik Sipil Air',pagu:17360000,detail:[
+   {nama:'Pengawasan Konstruksi Pembangunan Bangunan Gedung Negara Klasifikasi Sederhana - Pengawasan Pemeliharaan Jalan Paving Blok RW.04',volume:1,satuan:'Paket',harga:17360000,jumlah:17360000}
+ ]},
+ {subkegiatan:'7.01.03.2.02.0002 - Pembangunan Sarana dan Prasarana Kelurahan',kode:'5.1.02.03.004.00005',uraian:'Belanja Pemeliharaan Jalan dan Jembatan-Jalan-Jalan Desa',pagu:149902000,detail:[
+   {nama:'PEKERJAAN PAVING BLOCK NATURAL TEBAL 8 CM - Galian tanah biasa (Dengan Dibuang sejauh 5 km) dan Paving Block Warna t=8 cm dengan Menggunakan Pasir Urug',volume:622,satuan:'M2',harga:241000,jumlah:149902000}
+ ]},
+];
+// Struktur baku NPD mengikuti hierarki DPA dan selalu ditampilkan sebelum rincian rekening.
+const NPD_BAKU = [
+  {kode:'5.1', uraian:'Belanja Operasi'},
+  {kode:'5.1.02', uraian:'Belanja Barang dan Jasa'},
+  {kode:'5.1.02.01', uraian:'Belanja Barang'},
+  {kode:'5.1.02.01.001', uraian:'Belanja Barang Pakai Habis'}
+];
+
+// Migrasi data master lama agar uji DPA ini langsung menggunakan nama Sub Kegiatan yang benar.
+if(!Array.isArray(JSON.parse(localStorage.getItem(ITEM_KEY)||'null')) || JSON.parse(localStorage.getItem(ITEM_KEY)||'[]').some(x=>String(x.subkegiatan||'').toLowerCase().includes('penyedian barang cetakan'))){
+  items=[...DPA_DETAIL.map(x=>({subkegiatan:x.subkegiatan,kode:x.kode,uraian:x.uraian,pagu:x.pagu}))];
+  localStorage.setItem(ITEM_KEY,JSON.stringify(items));
+} else {
+  // Tambahkan master untuk sub kegiatan yang baru dimasukkan dari DPA, tanpa menghapus data master yang sudah ada.
+  const subPembangunan='7.01.03.2.02.0002 - Pembangunan Sarana dan Prasarana Kelurahan';
+  const pembangunanItems=DPA_DETAIL.filter(x=>x.subkegiatan===subPembangunan).map(x=>({subkegiatan:x.subkegiatan,kode:x.kode,uraian:x.uraian,pagu:x.pagu}));
+  pembangunanItems.forEach(x=>{
+    const idx=items.findIndex(y=>y.subkegiatan===x.subkegiatan && y.kode===x.kode && y.uraian===x.uraian);
+    if(idx<0) items.push(x); else items[idx]={...items[idx],pagu:x.pagu};
+  });
+  localStorage.setItem(ITEM_KEY,JSON.stringify(items));
+}
+
+let db=JSON.parse(localStorage.getItem(DB_KEY)||'[]');
+let rows=[];
+let activeSI=null;
+
+function rupiah(n){return 'Rp '+Number(n||0).toLocaleString('id-ID')}
+function num(v){return Number(String(v||'').replace(/[^0-9]/g, ''))||0}
+function moneyInput(v){return num(v).toLocaleString('id-ID')}
+function initLampiran(){
+ loadSIData();
+ if(!rows.length) addRow();
+ renderLampiranMaster();
+ renderLampiranSignatures();
+ renderLampiranDatabase();
+}
+function loadSIData(){
+ let data=[];
+ try{data=JSON.parse(localStorage.getItem('si_database')||'[]')}catch(e){}
+ if(!Array.isArray(data)||!data.length){
+   activeSI=null;
+   document.getElementById('si-no').textContent='Belum ada Pengajuan S.I';
+   document.getElementById('si-pptk').textContent='-';
+   document.getElementById('kegiatan').value='';
+   document.getElementById('subkegiatan').value='';
+   document.getElementById('tanggal').value='';
+   document.getElementById('bulan').value='';
+   return;
+ }
+ // Pengajuan S.I terbaru otomatis menjadi sumber Lampiran. Tidak ada kolom "Pilih Data Isi".
+ activeSI=data[0];
+ applySI(activeSI);
+}
+function applySI(d){
+ if(!d)return;
+ activeSI=d;
+ const linked = (typeof findSISetting === 'function') ? findSISetting(d.kegiatan, d.subkegiatan) : null;
+ const kegiatan = linked ? linked.kegiatan : (d.kegiatan||'');
+ const subkegiatan = linked ? linked.sub : (d.subkegiatan||'');
+ document.getElementById('kegiatan').value=kegiatan;
+ document.getElementById('subkegiatan').value=subkegiatan;
+ document.getElementById('tanggal').value=d.tanggal||'';
+ document.getElementById('bulan').value=(d.tanggal||'').slice(0,7);
+ document.getElementById('si-no').textContent=d.noSurat||'-';
+ document.getElementById('si-pptk').textContent=(d.pptk||'-')+' | '+(d.nip||'');
+ renderRows();
+}
+function dpaDisplayLabel(sub, nama){
+ let n=String(nama||'').trim();
+ if(sub.includes('2.13.01.2.06.0002')){
+   if(/Isi Hekter|Staples No\.? 3/i.test(n)) return 'Isi Staples';
+   if(/Ordner Dan Map/i.test(n)) return 'Ordner/Map';
+   if(/Ballpoint Pilot Balliner/i.test(n)) return 'Ballpoint Pilot Balliner';
+   if(/Kertas Folio Hvs 70 Gr/i.test(n)) return 'Kertas HVS';
+   if(/Tinta Printer Epson 003.*colour/i.test(n)) return 'Tinta Epson 003 warna';
+   if(/Epson 003.*black/i.test(n)) return 'Tinta Epson 003 hitam';
+ }
+ return n;
+}
+function getRincianBySub(){
+ const sub=document.getElementById('subkegiatan').value;
+ const dpa=DPA_DETAIL.filter(x=>x.subkegiatan===sub);
+ if(dpa.length){
+   const out=[];
+   dpa.forEach(x=>{
+     if(Array.isArray(x.detail)&&x.detail.length){
+       x.detail.forEach(d=>{
+         const uraian=dpaDisplayLabel(sub,d.nama);
+         const found=out.find(y=>y.kode===x.kode&&y.uraian===uraian);
+         const nilai=num(d.jumlah||num(d.harga)*num(d.volume));
+         if(found) found.pagu+=nilai;
+         else out.push({subkegiatan:x.subkegiatan,kode:x.kode,uraian,pagu:nilai});
+       });
+     }else{
+       out.push({subkegiatan:x.subkegiatan,kode:x.kode,uraian:x.uraian,pagu:num(x.pagu)});
+     }
+   });
+   return out;
+ }
+ return items.filter(x=>(x.subkegiatan||'')===sub);
+}
+function getDPAPagu(kode, sub, uraian=''){
+ const display=getRincianBySub().find(x=>x.kode===kode && (!uraian || x.uraian===uraian));
+ if(display) return num(display.pagu);
+ const x=DPA_DETAIL.find(x=>x.kode===kode && x.subkegiatan===sub && (!uraian || x.uraian===uraian));
+ if(x) return num(x.pagu);
+ const y=items.find(x=>x.kode===kode && x.subkegiatan===sub && (!uraian || x.uraian===uraian));
+ return y?num(y.pagu):0;
+}
+function getLampiranPagu(i){
+ const r=rows[i]||{};
+ return getDPAPagu(r.kode||'', document.getElementById('subkegiatan')?.value||'', r.uraian||'');
+}
+function lampiranOverPagu(i){
+ const r=rows[i]||{}; const pagu=getLampiranPagu(i);
+ if(!pagu || !r.kode || !r.uraian) return false;
+ const total=rows.reduce((a,x,j)=>a+(j===i?0:((x.kode||'')===r.kode && (x.uraian||'')===r.uraian ? num(x.jumlah):0)),0)+num(r.jumlah);
+ return total>pagu;
+}
+function addRow(data={}){
+ rows.push({
+  kode:data.kode||'',uraian:data.uraian||'',penerima:data.penerima||'',bank:data.bank||'',rek:data.rek||'',
+  jumlah:data.jumlah||0,negosiasi:data.negosiasi||0,ppn:data.ppn||0,p21:data.p21||0,p22:data.p22||0,p23:data.p23||0,
+  potongan:data.potongan!=null?data.potongan:(num(data.ppn)+num(data.p21)+num(data.p22)+num(data.p23)),
+  dibayar:data.dibayar!=null?data.dibayar:Math.max(0,num(data.jumlah)-num(data.negosiasi)-num(data.ppn)-num(data.p21)-num(data.p22)-num(data.p23))
+ });
+ renderRows();
+}
+function removeRow(i){if(rows.length===1)return;rows.splice(i,1);renderRows()}
+function renderRows(){
+ const tb=document.getElementById('rows'); if(!tb)return;
+ const rincian=getRincianBySub();
+ const kodeOptions=[...new Map(rincian.map(x=>[x.kode,x])).values()];
+ tb.innerHTML=rows.map((r,i)=>{
+   const uraianForCode=rincian.filter(x=>!r.kode||x.kode===r.kode);
+   return `
+ <tr class="align-top hover:bg-slate-50/50 transition">
+  <td class="p-2 border-t border-slate-100 text-center font-bold text-slate-700">${i+1}</td>
+  <td class="p-2 border-t border-slate-100"><select class="table-input" onchange="pickKode(${i},this.value)"><option value="">-- pilih kode --</option>${kodeOptions.map(x=>`<option value="${esc(x.kode)}" ${x.kode===r.kode?'selected':''}>${esc(x.kode)}</option>`).join('')}</select></td>
+  <td class="p-2 border-t border-slate-100"><select class="table-input" onchange="pickUraian(${i},this.value)"><option value="">-- pilih uraian --</option>${uraianForCode.map(x=>`<option value="${esc(x.uraian)}" ${x.uraian===r.uraian?'selected':''}>${esc(x.uraian)}</option>`).join('')}</select></td>
+  <td class="p-2 border-t border-slate-100"><select class="table-input" onchange="pickRecipient(${i},this.value)"><option value="">-- pilih --</option>${recipients.map((x,j)=>`<option value="${j}" ${x.nama===r.penerima?'selected':''}>${esc(x.nama)}</option>`).join('')}</select></td>
+  <td class="p-2 border-t border-slate-100"><input class="table-input" value="${esc(r.bank)}" oninput="setR(${i},'bank',this.value)"></td>
+  <td class="p-2 border-t border-slate-100"><input class="table-input" value="${esc(r.rek)}" oninput="setR(${i},'rek',this.value)"></td>
+  <td class="p-2 border-t border-slate-100"><input class="table-input money font-semibold ${lampiranOverPagu(i)?'border-2 border-red-600 text-red-700 bg-red-50':''}" title="${lampiranOverPagu(i)?'Melebihi pagu DPA. Pagu: '+rupiah(getLampiranPagu(i)):'Pagu DPA: '+rupiah(getLampiranPagu(i))}" value="${moneyInput(r.jumlah)}" oninput="setMoney(${i},'jumlah',this.value,false)"></td>
+  <td class="p-2 border-t border-slate-100"><input class="table-input money" value="${moneyInput(r.negosiasi)}" oninput="setMoney(${i},'negosiasi',this.value,false)"></td>
+  <td class="p-2 border-t border-slate-100"><input class="table-input money" value="${moneyInput(r.ppn)}" oninput="setMoney(${i},'ppn',this.value,false)"></td>
+  <td class="p-2 border-t border-slate-100"><input class="table-input money" value="${moneyInput(r.p21)}" oninput="setMoney(${i},'p21',this.value,false)"></td>
+  <td class="p-2 border-t border-slate-100"><input class="table-input money" value="${moneyInput(r.p22)}" oninput="setMoney(${i},'p22',this.value,false)"></td>
+  <td class="p-2 border-t border-slate-100"><input class="table-input money" value="${moneyInput(r.p23)}" oninput="setMoney(${i},'p23',this.value,false)"></td>
+  <td class="p-2 border-t border-slate-100 text-right font-bold text-slate-700 pt-3">${rupiah(r.ppn+r.p21+r.p22+r.p23)}</td>
+  <td class="p-2 border-t border-slate-100 text-right font-black text-emerald-700 pt-3">${rupiah(Math.max(0,r.jumlah-r.negosiasi-r.ppn-r.p21-r.p22-r.p23))}</td>
+  <td class="p-2 border-t border-slate-100 text-center"><button onclick="removeRow(${i})" class="text-rose-500 hover:text-rose-700 pt-2 transition"><i class="fa-solid fa-trash"></i></button></td>
+ </tr>`;
+ }).join('');
+ calcTotals();
+ syncNPDFromLampiran();
+}
+function setR(i,k,v){rows[i][k]=v; syncNPDFromLampiran()}
+function setMoney(i,k,v,rerender=true){
+ rows[i][k]=num(v);
+ if(rerender) renderRows(); else { calcTotals(); syncNPDFromLampiran(); }
+}
+function pickKode(i,kode){
+ rows[i].kode=kode;
+ const x=getRincianBySub().find(x=>x.kode===kode);
+ if(x && !rows[i].uraian) rows[i].uraian=x.uraian;
+ renderRows();
+}
+function pickUraian(i,uraian){
+ rows[i].uraian=uraian;
+ const x=getRincianBySub().find(x=>x.uraian===uraian);
+ if(x)rows[i].kode=x.kode;
+ renderRows();
+}
+function pickRecipient(i,j){if(j==='')return;const x=recipients[Number(j)];rows[i].penerima=x.nama;rows[i].bank=x.bank;rows[i].rek=x.rek;renderRows()}
+function calcTotals(){
+ const keys=['jumlah','negosiasi','ppn','p21','p22','p23'];let t={};keys.forEach(k=>t[k]=rows.reduce((a,r)=>a+num(r[k]),0));
+ t.pot=t.negosiasi+t.ppn+t.p21+t.p22+t.p23;t.bayar=Math.max(0,t.jumlah-t.pot);
+ document.getElementById('total-jumlah').textContent=rupiah(t.jumlah);
+ document.getElementById('total-negosiasi').textContent=rupiah(t.negosiasi);
+ document.getElementById('total-ppn').textContent=rupiah(t.ppn);
+ document.getElementById('total-p21').textContent=rupiah(t.p21);
+ document.getElementById('total-p22').textContent=rupiah(t.p22);
+ document.getElementById('total-p23').textContent=rupiah(t.p23);
+ document.getElementById('total-potongan').textContent=rupiah(t.pot);
+ document.getElementById('total-dibayar').textContent=rupiah(t.bayar);
+ return t;
+}
+
+// Lampiran adalah sumber transaksi NPD. Setiap baris Lampiran yang diisi
+// otomatis menjadi Pencairan Saat Ini pada NPD berdasarkan Jumlah yang Dibayarkan
+// = Jumlah - Harga Negosiasi - PPN - PPh 21 - PPh 22 - PPh 23.
+
+function npdBulanPelaporan(){
+  const el=document.getElementById('npd-bulan-pelaporan');
+  if(el&&/^\d{4}-\d{2}$/.test(el.value)) return el.value;
+  const d=document.getElementById('npd-tanggal')?.value||'';
+  if(/^\d{4}-\d{2}/.test(d)) return d.slice(0,7);
+  const now=new Date(); return `${now.getFullYear()}-${String(now.getMonth()+1).padStart(2,'0')}`;
+}
+
+function npdBulanPelaporanChanged(){
+  const month=npdBulanPelaporan();
+  const kkEl=document.getElementById('kk-bulan-pelaporan');
+  if(kkEl && kkEl.value!==month) kkEl.value=month;
+  try{localStorage.setItem('npd_bulan_pelaporan_v1',month);localStorage.setItem('kk_bulan_pelaporan_v1',month)}catch(e){}
+  syncNPDFromLampiran();
+  npdRenderRows();
+  npdRefreshPreview();
+  if(typeof kkRefreshPreview==='function') kkRefreshPreview();
+}
+
+function syncNPDFromLampiran(){
+ if(typeof npdRows==='undefined') return;
+ const sub=document.getElementById('subkegiatan')?.value||document.getElementById('npd-subkegiatan')?.value||'';
+ if(!sub) return;
+
+ // LOGIKA NPD FINAL:
+ // 1. Semua rincian DPA tetap tampil.
+ // 2. Bulan ini berasal dari Lampiran berdasarkan KODE + URAIAN ITEM.
+ // 2a. Bulan lalu = akumulasi seluruh bulan sebelum bulan aktif.
+ // 3. Total kode rekening = total seluruh rincian di bawah kode tersebut.
+ // 4. Total klasifikasi induk = total seluruh kode rekening di bawahnya.
+ // 5. Pagu, Lalu, Kini dan Sisa pada setiap induk mengikuti total anaknya.
+ // 6. Baris induk hanya ringkasan, bukan transaksi tambahan.
+
+ const norm=v=>String(v||'').replace(/^\s*-\s*/,'').trim().toLowerCase();
+ const source=Array.isArray(rows)?rows.filter(r=>r&&r.kode&&r.uraian):[];
+ const previous=Array.isArray(npdRows)?npdRows:[];
+
+ // Rekap berjalan per bulan. Bulan Lalu dihitung dari seluruh bulan
+ // sebelum bulan aktif, sehingga Januari otomatis menjadi dasar Februari, dst.
+ const NPD_MONTHLY_KEY='npd_realisasi_bulanan_v1';
+ const npdMonthKey=()=>{
+   const selected=npdBulanPelaporan();
+   if(/^\d{4}-\d{2}$/.test(selected)) return selected;
+   const d=document.getElementById('npd-tanggal')?.value||'';
+   if(/^\d{4}-\d{2}/.test(d)) return d.slice(0,7);
+   const now=new Date(); return `${now.getFullYear()}-${String(now.getMonth()+1).padStart(2,'0')}`;
+ };
+ const currentMonth=npdMonthKey();
+ const transactionMonth=(document.getElementById('npd-tanggal')?.value||'').slice(0,7);
+ const subHistoryKey=sub;
+ let npdHistory={};
+ try{npdHistory=JSON.parse(localStorage.getItem(NPD_MONTHLY_KEY)||'{}')}catch(e){npdHistory={};}
+ if(!npdHistory||typeof npdHistory!=='object')npdHistory={};
+ if(!npdHistory[subHistoryKey]||typeof npdHistory[subHistoryKey]!=='object')npdHistory[subHistoryKey]={};
+
+ // SIMPAN BULAN TRANSAKSI TERLEBIH DAHULU.
+ // Ini penting saat pengguna sudah mengisi Oktober lalu memilih November:
+ // data Oktober harus tetap tersimpan sebagai arsip dan otomatis masuk
+ // ke kolom Pencairan s.d. Bulan Lalu ketika November dipilih.
+ if(source.length && /^\d{4}-\d{2}$/.test(transactionMonth)){
+   if(!npdHistory[subHistoryKey][transactionMonth] || typeof npdHistory[subHistoryKey][transactionMonth]!=='object')
+     npdHistory[subHistoryKey][transactionMonth]={};
+   const transactionBucket=npdHistory[subHistoryKey][transactionMonth];
+   const transactionItems={};
+   source.forEach(r=>{
+     const kode=String(r.kode||'').trim();
+     const uraian=String(r.uraian||'').trim();
+     if(!kode||!uraian)return;
+     const key=kode+'||'+norm(uraian);
+     const totalPotongan=num(r.negosiasi)+num(r.ppn)+num(r.p21)+num(r.p22)+num(r.p23);
+     const jumlahDibayarkan=Math.max(0,num(r.jumlah)-totalPotongan);
+     transactionItems[key]=(transactionItems[key]||0)+jumlahDibayarkan;
+   });
+   transactionBucket.items=transactionItems;
+   transactionBucket.updatedAt=new Date().toISOString();
+   try{localStorage.setItem(NPD_MONTHLY_KEY,JSON.stringify(npdHistory));}catch(e){}
+ }
+
+ if(!npdHistory[subHistoryKey][currentMonth] || typeof npdHistory[subHistoryKey][currentMonth]!=='object')
+   npdHistory[subHistoryKey][currentMonth]={};
+ const monthBucket=npdHistory[subHistoryKey][currentMonth];
+
+ // Pencairan Saat Ini hanya mengambil arsip bulan yang sedang dipilih.
+ // Jika bulan aktif sama dengan bulan transaksi pada Lampiran, arsip tersebut
+ // sudah diperbarui di atas. Jika berbeda, data Lampiran tidak ikut pindah.
+ const savedItems=monthBucket.items&&typeof monthBucket.items==='object'?monthBucket.items:{};
+ let kiniItemMap=new Map(Object.entries(savedItems).map(([k,v])=>[k,num(v)]));
+
+ // Akumulasi bulan-bulan sebelumnya untuk kolom Pencairan s.d Bulan Lalu.
+ const laluItemMap=new Map();
+ Object.entries(npdHistory[subHistoryKey]||{}).forEach(([month,bucket])=>{
+   if(month>=currentMonth||!bucket||typeof bucket.items!=='object')return;
+   Object.entries(bucket.items).forEach(([k,v])=>laluItemMap.set(k,(laluItemMap.get(k)||0)+num(v)));
+ });
+
+ // SEMUA RINCIAN TETAP DITAMPILKAN.
+ // Jangan bergantung pada isi Lampiran saat membentuk struktur NPD, karena
+ // saat pindah bulan Lampiran dapat kosong/berbeda. Struktur harus selalu
+ // berasal dari DPA subkegiatan yang sedang dipilih, lalu transaksi Lampiran
+ // hanya mengisi nominal pada rincian yang cocok.
+ const allItems=[];
+ const dpaForSub=DPA_DETAIL.filter(x=>x.subkegiatan===sub);
+ dpaForSub.forEach(x=>{
+   if(Array.isArray(x.detail)&&x.detail.length){
+     x.detail.forEach(d=>{
+       const uraian=dpaDisplayLabel(sub,d.nama);
+       const nilai=num(d.jumlah||num(d.harga)*num(d.volume));
+       const found=allItems.find(y=>y.kode===x.kode&&norm(y.uraian)===norm(uraian));
+       if(found) found.pagu+=nilai;
+       else allItems.push({subkegiatan:sub,kode:x.kode,uraian,pagu:nilai});
+     });
+   }else{
+     allItems.push({subkegiatan:sub,kode:x.kode,uraian:x.uraian,pagu:num(x.pagu)});
+   }
+ });
+ // Fallback untuk rincian lama/non-DPA agar tidak pernah hilang.
+ if(!allItems.length){
+   getRincianBySub().forEach(item=>allItems.push(item));
+ }
+ // Pertahankan rincian yang sudah terbentuk di npdRows, termasuk rincian
+ // yang berasal dari Lampiran dan belum tercatat di DPA master.
+ previous.filter(r=>r&&r.jenis==='detail'&&r.sourceKode&&String(r.uraian||'').trim()).forEach(r=>{
+   const uraian=String(r.uraian||'').replace(/^\s*-\s*/,'').trim();
+   const kode=String(r.sourceKode||'').trim();
+   if(!kode||!uraian)return;
+   if(!allItems.some(x=>x.kode===kode&&norm(x.uraian)===norm(uraian))){
+     allItems.push({subkegiatan:sub,kode,uraian,pagu:num(r.anggaran)||num(getDPAPagu(kode,sub,uraian))});
+   }
+ });
+ const byCode=new Map();
+ allItems.forEach(item=>{
+   if(!byCode.has(item.kode))byCode.set(item.kode,[]);
+   byCode.get(item.kode).push(item);
+ });
+
+ // Item Lampiran yang belum ada di master DPA tetap dimasukkan agar transaksi tidak hilang.
+ source.forEach(r=>{
+   const kode=String(r.kode||'').trim();
+   const uraian=String(r.uraian||'').trim();
+   if(!kode||!uraian)return;
+   const exists=allItems.some(x=>x.kode===kode&&norm(x.uraian)===norm(uraian));
+   if(!exists){
+     if(!byCode.has(kode))byCode.set(kode,[]);
+     byCode.get(kode).push({
+       subkegiatan:sub,
+       kode:kode,
+       uraian:uraian,
+       pagu:num(getDPAPagu(kode,sub,uraian))
+     });
+   }
+ });
+
+ // Urutkan kode rekening agar hierarchy konsisten.
+ const accounts=[...byCode.entries()].sort((a,b)=>String(a[0]).localeCompare(String(b[0]),undefined,{numeric:true}));
+
+ // Hitung total setiap kode rekening terlebih dahulu.
+ const accountData=accounts.map(([kode,details])=>{
+   const pagu=details.reduce((a,g)=>a+num(g.pagu||getDPAPagu(g.kode,sub,g.uraian)),0);
+   const kini=details.reduce((a,g)=>a+(kiniItemMap.get(kode+'||'+norm(g.uraian))||0),0);
+   const lalu=details.reduce((a,g)=>a+(laluItemMap.get(kode+'||'+norm(g.uraian))||0),0);
+   return {kode,details,pagu,lalu,kini};
+ });
+
+ const sumByPrefix=prefix=>accountData
+   .filter(x=>x.kode===prefix||x.kode.startsWith(prefix+'.'))
+   .reduce((a,x)=>a+x.pagu,0);
+ const sumLaluByPrefix=prefix=>accountData
+   .filter(x=>x.kode===prefix||x.kode.startsWith(prefix+'.'))
+   .reduce((a,x)=>a+x.lalu,0);
+ const sumKiniByPrefix=prefix=>accountData
+   .filter(x=>x.kode===prefix||x.kode.startsWith(prefix+'.'))
+   .reduce((a,x)=>a+x.kini,0);
+
+ const ordered=[];
+
+ // 5.1 = seluruh belanja pada subkegiatan ini.
+ const totalPagu=accountData.reduce((a,x)=>a+x.pagu,0);
+ const totalLalu=accountData.reduce((a,x)=>a+x.lalu,0);
+ const totalKini=accountData.reduce((a,x)=>a+x.kini,0);
+ ordered.push({kode:'5.1',uraian:'Belanja Operasi',anggaran:totalPagu,lalu:totalLalu,kini:totalKini,jenis:'header'});
+
+ // 5.1.02 = seluruh kode 5.1.02 dan turunannya.
+ const pagu5102=sumByPrefix('5.1.02');
+ const lalu5102=sumLaluByPrefix('5.1.02');
+ const kini5102=sumKiniByPrefix('5.1.02');
+ ordered.push({kode:'5.1.02',uraian:'Belanja Barang dan Jasa',anggaran:pagu5102,lalu:lalu5102,kini:kini5102,jenis:'header'});
+
+ // Tampilkan setiap cabang 5.1.02.xx satu kali, lalu kode rekening dan rinciannya.
+ const branch3Seen=new Set();
+ const branch4Seen=new Set();
+
+ for(const acc of accountData){
+   const kode=acc.kode;
+   if(!kode.startsWith('5.1.02.'))continue;
+
+   const parts=kode.split('.');
+   const branch3=parts.length>=4?parts.slice(0,4).join('.'):kode;
+   const branch4=parts.length>=5?parts.slice(0,5).join('.'):kode;
+
+   if(!branch3Seen.has(branch3)){
+     branch3Seen.add(branch3);
+     const p=sumByPrefix(branch3), l=sumLaluByPrefix(branch3), k=sumKiniByPrefix(branch3);
+     const uraian=branch3==='5.1.02.01'
+       ?'Belanja Barang'
+       :branch3==='5.1.02.02'
+         ?'Belanja Jasa'
+         :'Belanja '+branch3.split('.').slice(-1)[0];
+     ordered.push({kode:branch3,uraian,anggaran:p,lalu:l,kini:k,jenis:'header'});
+   }
+
+   if(parts.length>=5&&!branch4Seen.has(branch4)){
+     branch4Seen.add(branch4);
+     const p=sumByPrefix(branch4), l=sumLaluByPrefix(branch4), k=sumKiniByPrefix(branch4);
+     const uraian=branch4==='5.1.02.01.001'
+       ?'Belanja Barang Pakai Habis'
+       :branch4==='5.1.02.02.001'
+         ?'Belanja Jasa Kantor'
+         :'Belanja '+branch4.split('.').slice(-1)[0];
+     ordered.push({kode:branch4,uraian,anggaran:p,lalu:l,kini:k,jenis:'header'});
+   }
+
+   const masterRow=DPA_DETAIL.find(x=>x.subkegiatan===sub&&x.kode===kode);
+   ordered.push({
+     kode,
+     uraian:masterRow?.uraian||kode,
+     anggaran:acc.pagu,
+     lalu:acc.lalu,
+     kini:acc.kini,
+     jenis:'account'
+   });
+
+   acc.details.forEach(g=>{
+     const itemKey=kode+'||'+norm(g.uraian);
+     const itemKini=kiniItemMap.get(itemKey)||0;
+     const itemLalu=laluItemMap.get(itemKey)||0;
+     ordered.push({
+       kode:'',
+       uraian:'- '+g.uraian,
+       anggaran:num(g.pagu||getDPAPagu(g.kode,sub,g.uraian)),
+       lalu:itemLalu,
+       kini:itemKini,
+       jenis:'detail',
+       sourceKode:kode,
+       dipakaiBulanIni:itemKini>0,
+       dipakaiBulanLalu:itemLalu>0
+     });
+   });
+ }
+
+ npdRows=ordered;
+ if(typeof npdRenderRows==='function')npdRenderRows();
+ if(typeof npdRefreshPreview==='function')npdRefreshPreview();
+}
+
+function clearPrintModes(){
+  document.body.classList.remove('print-f4','print-lampiran','print-npd','print-rekap');
+}
+function printF4(){
+  clearPrintModes();
+  document.body.classList.add('print-f4');
+  window.print();
+  setTimeout(clearPrintModes,500);
+}
+function printLampiran(){
+  clearPrintModes();
+  const oldStyle=document.getElementById('dynamic-landscape-print');
+  if(oldStyle) oldStyle.remove();
+  const style=document.createElement('style');
+  style.id='dynamic-landscape-print';
+  style.textContent='@page { size: 330.2mm 215.9mm; margin: 8mm; }';
+  document.head.appendChild(style);
+  document.body.classList.add('print-lampiran');
+  window.print();
+  setTimeout(clearPrintModes,500);
+}
+
+function saveAndPreview(){
+ if(!activeSI){alert('Belum ada Pengajuan S.I. Silakan buat Pengajuan S.I terlebih dahulu.');return;}
+ if(!document.getElementById('subkegiatan').value){alert('Sub Kegiatan dari Pengajuan S.I belum tersedia.');return;}
+ const t=calcTotals();
+ const data={id:Date.now(),siId:activeSI.id,siNo:activeSI.noSurat||'',tanggal:document.getElementById('tanggal').value,bulan:document.getElementById('bulan').value,program:document.getElementById('program').value,kegiatan:document.getElementById('kegiatan').value,subkegiatan:document.getElementById('subkegiatan').value,rows:JSON.parse(JSON.stringify(rows)),totals:t};
+ db.unshift(data);localStorage.setItem(DB_KEY,JSON.stringify(db));
+ preview(data);switchTab('lampiran-preview');
+}
+function renderLampiranSignatures(){
+ const pa=penggunaAnggaran||{};
+ const pptk=activeSI||{};
+ const paEl=document.getElementById('lamp-ttd-pa');
+ const paNipEl=document.getElementById('lamp-ttd-pa-nip');
+ const pptkEl=document.getElementById('lamp-ttd-pptk');
+ const pptkNipEl=document.getElementById('lamp-ttd-pptk-nip');
+ if(paEl) paEl.textContent=pa.nama||'-';
+ if(paNipEl) paNipEl.textContent='NIP. '+(pa.nip||'-');
+ if(pptkEl) pptkEl.textContent=pptk.pptk||'-';
+ if(pptkNipEl) pptkNipEl.textContent='NIP. '+(pptk.nip||'-');
+}
+function preview(d){
+ renderLampiranSignatures();
+ document.getElementById('p-program').textContent=d.program;
+ document.getElementById('p-kegiatan').textContent=d.kegiatan;
+ document.getElementById('p-sub').textContent=d.subkegiatan;
+ document.getElementById('p-bulan').textContent=d.bulan?new Date(d.bulan+'-01').toLocaleDateString('id-ID',{month:'long',year:'numeric'}):'-';
+ document.getElementById('preview-rows').innerHTML=d.rows.map((r,i)=>{
+  const pot=r.negosiasi+r.ppn+r.p21+r.p22+r.p23,bayar=Math.max(0,r.jumlah-pot);
+  return `<tr><td class="border border-black p-1 text-center">${i+1}</td><td class="border border-black p-1">${esc(r.kode)}</td><td class="border border-black p-1">${esc(r.uraian)}</td><td class="border border-black p-1">${esc(r.penerima)}</td><td class="border border-black p-1">${esc(r.bank)}</td><td class="border border-black p-1">${esc(r.rek)}</td><td class="border border-black p-1 text-right">${Number(r.jumlah).toLocaleString('id-ID')}</td><td class="border border-black p-1 text-right">${Number(r.negosiasi||0).toLocaleString('id-ID')}</td><td class="border border-black p-1 text-right">${Number(r.ppn).toLocaleString('id-ID')}</td><td class="border border-black p-1 text-right">${Number(r.p21).toLocaleString('id-ID')}</td><td class="border border-black p-1 text-right">${Number(r.p22).toLocaleString('id-ID')}</td><td class="border border-black p-1 text-right">${Number(r.p23).toLocaleString('id-ID')}</td><td class="border border-black p-1 text-right">${pot.toLocaleString('id-ID')}</td><td class="border border-black p-1 text-right">${bayar.toLocaleString('id-ID')}</td></tr>`
+ }).join('');
+ const t=d.totals;
+ document.getElementById('preview-total').innerHTML=`<tr class="font-bold"><td colspan="6" class="border border-black p-1 text-right">TOTAL</td><td class="border border-black p-1 text-right">${t.jumlah.toLocaleString('id-ID')}</td><td class="border border-black p-1 text-right">${(t.negosiasi||0).toLocaleString('id-ID')}</td><td class="border border-black p-1 text-right">${t.ppn.toLocaleString('id-ID')}</td><td class="border border-black p-1 text-right">${t.p21.toLocaleString('id-ID')}</td><td class="border border-black p-1 text-right">${t.p22.toLocaleString('id-ID')}</td><td class="border border-black p-1 text-right">${t.p23.toLocaleString('id-ID')}</td><td class="border border-black p-1 text-right">${t.pot.toLocaleString('id-ID')}</td><td class="border border-black p-1 text-right">${t.bayar.toLocaleString('id-ID')}</td></tr>`;
+}
+function resetLampiranForm(){
+ rows=[];
+ if(activeSI) applySI(activeSI);
+ addRow();
+}
+function renderLampiranDatabase(){
+ const q=(document.getElementById('search')?.value||'').toLowerCase();
+ const body=document.getElementById('db-body'); if(!body)return;
+ const arr=db.filter(d=>(d.kegiatan+' '+d.subkegiatan+' '+d.bulan).toLowerCase().includes(q));
+ body.innerHTML=arr.length?arr.map(d=>`<tr class="border-t"><td class="p-3">${d.tanggal||'-'}</td><td class="p-3">${esc(d.kegiatan)}</td><td class="p-3">${esc(d.subkegiatan)}</td><td class="p-3 text-right">${rupiah(d.totals.jumlah)}</td><td class="p-3 text-right">${rupiah(d.totals.bayar)}</td><td class="p-3 text-center"><button onclick="preview(${JSON.stringify(d).replace(/"/g,'&quot;')});switchTab('lampiran-preview')" class="px-3 py-1 bg-emerald-100 text-emerald-800 rounded-lg">Cetak</button> <button onclick="deleteDB(${d.id})" class="px-2 py-1 bg-rose-100 text-rose-700 rounded-lg">Hapus</button></td></tr>`).join(''):`<tr><td colspan="6" class="p-8 text-center text-slate-400">Belum ada data.</td></tr>`;
+}
+function deleteDB(id){if(confirm('Hapus data lampiran ini?')){db=db.filter(x=>x.id!==id);localStorage.setItem(DB_KEY,JSON.stringify(db));renderLampiranDatabase()}}
+function addRecipient(){const n=document.getElementById('m-nama').value.trim();if(!n)return alert('Nama penerima belum diisi.');recipients.push({nama:n,bank:document.getElementById('m-bank').value.trim(),rek:document.getElementById('m-rek').value.trim()});localStorage.setItem(REC_KEY,JSON.stringify(recipients));document.getElementById('m-nama').value='';document.getElementById('m-bank').value='';document.getElementById('m-rek').value='';renderLampiranMaster();renderRows()}
+function addItem(){
+ const sub=document.getElementById('m-sub').value.trim(),k=document.getElementById('m-kode').value.trim(),u=document.getElementById('m-uraian').value.trim();
+ if(!sub||!k||!u)return alert('Sub Kegiatan, Kode Rekening dan Uraian Kegiatan harus diisi.');
+ items.push({subkegiatan:sub,kode:k,uraian:u});
+ localStorage.setItem(ITEM_KEY,JSON.stringify(items));
+ document.getElementById('m-kode').value='';document.getElementById('m-uraian').value='';
+ renderLampiranMaster();renderRows();
+}
+function renderLampiranMaster(){
+ const subSel=document.getElementById('m-sub');
+ if(subSel){
+   subSel.innerHTML='<option value="">-- pilih Sub Kegiatan --</option>'+masterSubKegiatan.map(s=>`<option value="${esc(s)}">${esc(s)}</option>`).join('');
+ }
+ const rlist=document.getElementById('recipient-list');
+ if(rlist)rlist.innerHTML=recipients.map((x,i)=>`<div class="p-3 bg-white rounded-xl border border-slate-200 shadow-sm text-xs flex justify-between items-center"><span><b class="text-slate-900">${esc(x.nama)}</b><br><span class="text-teal-700 font-semibold">${esc(x.bank)}</span> | ${esc(x.rek)}</span><button onclick="recipients.splice(${i},1);localStorage.setItem(REC_KEY,JSON.stringify(recipients));renderLampiranMaster();renderRows()" class="text-rose-500 hover:text-rose-700 transition"><i class="fa-solid fa-trash"></i></button></div>`).join('');
+ const ilist=document.getElementById('item-list');
+ if(ilist)ilist.innerHTML=items.map((x,i)=>`<div class="p-3 bg-white rounded-xl border border-slate-200 shadow-sm text-xs flex justify-between items-center"><span><b class="text-slate-900">${esc(x.subkegiatan)}</b><br><span class="text-teal-700 font-bold">${esc(x.kode)}</span> — ${esc(x.uraian)}</span><button onclick="items.splice(${i},1);localStorage.setItem(ITEM_KEY,JSON.stringify(items));renderLampiranMaster();renderRows()" class="text-rose-500 hover:text-rose-700 transition"><i class="fa-solid fa-trash"></i></button></div>`).join('');
+}
+
+function esc(s){return String(s??'').replace(/[&<>"']/g,m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#039;'}[m]))}
+
+
+const NPD_SETTING = [{"program":"2.13.01 - PROGRAM PENUNJANG URUSAN PEMERINTAHAN DAERAH KABUPATEN/KOTA","kegiatan":"2.13.01.2.06 - ADMINISTRASI UMUM PERANGKAT DAERAH","sub":"2.13.01.2.06.0004 - Penyediaan Bahan Logistik Kantor","dpa":"DPA/A.1/7.01.2.13.0.00.35.0000/001/2026"},{"program":"2.13.01 - PROGRAM PENUNJANG URUSAN PEMERINTAHAN DAERAH KABUPATEN/KOTA","kegiatan":"2.13.01.2.06 - ADMINISTRASI UMUM PERANGKAT DAERAH","sub":"2.13.01.2.06.0005 - Penyediaan Barang Cetakan dan Penggandaan","dpa":"DPA/A.1/7.01.2.13.0.00.35.0000/001/2026"},{"program":"2.13.01 - PROGRAM PENUNJANG URUSAN PEMERINTAHAN DAERAH KABUPATEN/KOTA","kegiatan":"2.13.01.2.06 - ADMINISTRASI UMUM PERANGKAT DAERAH","sub":"2.13.01.2.06.0001 - Penyediaan Komponen Instalasi Listrik/Penerangan Bangunan Kantor","dpa":"DPA/A.1/7.01.2.13.0.00.35.0000/001/2026"},{"program":"2.13.01 - PROGRAM PENUNJANG URUSAN PEMERINTAHAN DAERAH KABUPATEN/KOTA","kegiatan":"2.13.01.2.06 - ADMINISTRASI UMUM PERANGKAT DAERAH","sub":"2.13.01.2.06.0002 - Penyediaan Peralatan dan Perlengkapan Kantor","dpa":"DPA/A.1/7.01.2.13.0.00.35.0000/001/2026"},{"program":"2.13.01 - PROGRAM PENUNJANG URUSAN PEMERINTAHAN DAERAH KABUPATEN/KOTA","kegiatan":"2.13.01.2.06 - ADMINISTRASI UMUM PERANGKAT DAERAH","sub":"2.13.01.2.06.0003 - Penyediaan Peralatan Rumah Tangga","dpa":"DPA/A.1/7.01.2.13.0.00.35.0000/001/2026"},{"program":"7.01.03 - PROGRAM PEMBERDAYAAN MASYARAKAT DESA DAN KELURAHAN","kegiatan":"7.01.03.2.02 - KEGIATAN PEMBERDAYAAN KELURAHAN","sub":"7.01.03.2.02.0002 - Pembangunan Sarana dan Prasarana Kelurahan","dpa":"DPA/A.1/7.01.2.13.0.00.35.0000/001/2026"},{"program":"7.01.03 - PROGRAM PEMBERDAYAAN MASYARAKAT DESA DAN KELURAHAN","kegiatan":"7.01.03.2.02 - KEGIATAN PEMBERDAYAAN KELURAHAN","sub":"7.01.03.2.02.0003 - Pemberdayaan Masyarakat di Kelurahan","dpa":"DPA/A.1/7.01.2.13.0.00.35.0000/001/2026"},{"program":"7.01.03 - PROGRAM PEMBERDAYAAN MASYARAKAT DESA DAN KELURAHAN","kegiatan":"7.01.03.2.02 - KEGIATAN PEMBERDAYAAN KELURAHAN","sub":"7.01.03.2.02.0001 - Peningkatan Partisipasi Masyarakat dalam Forum Musyawarah Perencanaan Pembangunan di Kelurahan","dpa":"DPA/A.1/7.01.2.13.0.00.35.0000/001/2026"}];
+
+let npdRows = [
+  {kode:'5.1.02.01.001.00058',uraian:'Belanja  Makanan dan Minuman Aktivitas Lapangan',anggaran:0,lalu:0,kini:0},
+  {kode:'',uraian:'Belanja   Lapangan',anggaran:0,lalu:0,kini:0},
+  {kode:'',uraian:'Belanja Mamin Lapangan',anggaran:0,lalu:0,kini:0},
+  {kode:'',uraian:'Belanja Mamin Pers Gathering',anggaran:0,lalu:0,kini:0},
+  {kode:'',uraian:'- Nasi Box',anggaran:0,lalu:0,kini:0},
+  {kode:'',uraian:'- Snack Box',anggaran:0,lalu:0,kini:0}
+];
+
+function escAttr(s){return esc(s).replace(/"/g,'&quot;').replace(/'/g,'&#39;');}
+
+function npdInit(){
+  const sel=document.getElementById('npd-kegiatan');
+  if(!sel)return;
+  const activities=[...new Map(NPD_SETTING.map(x=>[x.kegiatan,x])).values()];
+  sel.innerHTML=activities.map(x=>`<option value="${escAttr(x.kegiatan)}">${esc(x.kegiatan)}</option>`).join('');
+  npdLoadFromSI();
+  const monthEl=document.getElementById('npd-bulan-pelaporan');
+  if(monthEl){
+    let saved=''; try{saved=localStorage.getItem('npd_bulan_pelaporan_v1')||''}catch(e){}
+    const dateMonth=(document.getElementById('npd-tanggal')?.value||'').slice(0,7);
+    monthEl.value=(saved && [...monthEl.options].some(o=>o.value===saved))?saved:(dateMonth||monthEl.value);
+  }
+  const sub=document.getElementById('npd-subkegiatan')?.value||'';
+  if(sub) npdLoadDPAItems(sub);
+  npdRenderRows();
+  npdRefreshPreview();
+}
+
+function npdSyncFromLatestSI(){
+  npdLoadFromSI();
+  npdRefreshPreview();
+}
+
+document.addEventListener('input', e=>{if(e.target&&e.target.id==='npd-nomor')npdRefreshPreview()});
+document.addEventListener('change', e=>{if(e.target&&e.target.name==='npd-jenis')npdRefreshPreview()});
+
+function npdKegiatanChanged(){
+  const kegiatan=document.getElementById('npd-kegiatan').value;
+  const data=NPD_SETTING.filter(x=>x.kegiatan===kegiatan);
+  const sub=document.getElementById('npd-subkegiatan');
+  sub.innerHTML=data.map(x=>`<option value="${escAttr(x.sub)}">${esc(x.sub)}</option>`).join('');
+  if(data.length) npdSubChanged();
+}
+
+function npdSubChanged(){
+  const sub=document.getElementById('npd-subkegiatan').value;
+  const found=NPD_SETTING.find(x=>x.sub===sub);
+  if(!found)return;
+  document.getElementById('npd-program').value=found.program;
+  document.getElementById('npd-dpa').value=found.dpa;
+  npdLoadDPAItems(found.sub);
+  npdRefreshPreview();
+}
+
+function npdNormalize(s){
+  return String(s||'').toLowerCase()
+    .replace(/penyedian/g,'penyediaan')
+    .replace(/masyaralat/g,'masyarakat')
+    .replace(/[^a-z0-9]+/g,' ');
+}
+
+function npdFindSettingFromSI(si){
+  if(!si)return null;
+  const exact=NPD_SETTING.find(x=>npdNormalize(x.sub)===npdNormalize(si.subkegiatan));
+  if(exact)return exact;
+  return NPD_SETTING.find(x=>npdNormalize(si.subkegiatan).includes(npdNormalize(x.sub)) || npdNormalize(x.sub).includes(npdNormalize(si.subkegiatan))) || null;
+}
+
+function npdLoadFromSI(){
+  let data=[];
+  try{data=JSON.parse(localStorage.getItem('si_database')||'[]')}catch(e){}
+  const si=Array.isArray(data)&&data.length?data[0]:null;
+  if(si){
+    document.getElementById('npd-tanggal').value=si.tanggal||'';
+    const pptk=document.getElementById('npd-pptk');
+    pptk.value=si.pptk||'';
+    const found=npdFindSettingFromSI(si);
+    if(found){
+      document.getElementById('npd-kegiatan').value=found.kegiatan;
+      npdKegiatanChanged();
+      document.getElementById('npd-subkegiatan').value=found.sub;
+      npdSubChanged();
+    }else{
+      npdKegiatanChanged();
+    }
+  }else{
+    const d=new Date();
+    document.getElementById('npd-tanggal').value=d.toISOString().slice(0,10);
+    const first=document.getElementById('npd-kegiatan');
+    if(first.options.length) first.selectedIndex=0;
+    npdKegiatanChanged();
+  }
+  const pa=penggunaAnggaran||{};
+  document.getElementById('npdp-pa').textContent=pa.nama||'-';
+  document.getElementById('npdp-pa-nip').textContent=`NIP. ${pa.nip||'-'}`;
+}
+
+function npdLoadDPAItems(sub){
+ // NPD selalu menampilkan SELURUH rincian yang tersedia pada Lampiran/master DPA.
+ // Pencairan Saat Ini kemudian diisi oleh syncNPDFromLampiran() berdasarkan
+ // item yang benar-benar ditulis pada Form Lampiran.
+ const master=DPA_DETAIL.filter(x=>x.subkegiatan===sub);
+ // Gunakan rincian DPA milik Sub Kegiatan yang sedang dipilih.
+ // Dengan begitu setiap NPD yang memang mempunyai rincian memakai
+ // perhitungan hierarki yang sama, tanpa bergantung pada subkegiatan Lampiran.
+ const rincian=master.length
+   ? master.flatMap(x=>Array.isArray(x.detail)&&x.detail.length
+       ? x.detail.map(d=>({subkegiatan:x.subkegiatan,kode:x.kode,uraian:dpaDisplayLabel(sub,d.nama),pagu:num(d.jumlah||num(d.harga)*num(d.volume))}))
+       : [{subkegiatan:x.subkegiatan,kode:x.kode,uraian:x.uraian,pagu:num(x.pagu)}])
+   : getRincianBySub();
+ if(!master.length && !rincian.length){
+   npdRows=[];
+   if(typeof npdRenderRows==='function') npdRenderRows();
+   return;
+ }
+
+ const byCode=new Map();
+ rincian.forEach(x=>{
+   if(!byCode.has(x.kode)) byCode.set(x.kode,[]);
+   byCode.get(x.kode).push(x);
+ });
+ const totalSub=rincian.reduce((a,x)=>a+num(x.pagu),0);
+ const rowsOut=[
+   {kode:'5.1',uraian:'Belanja Operasi',anggaran:totalSub,lalu:0,kini:0,jenis:'header'},
+   {kode:'5.1.02',uraian:'Belanja Barang dan Jasa',anggaran:totalSub,lalu:0,kini:0,jenis:'header'}
+ ];
+
+ for(const [kode,details] of byCode){
+   const accountPagu=details.reduce((a,x)=>a+num(x.pagu),0);
+   const parts=kode.split('.');
+   const branch3=parts.slice(0,4).join('.');
+   const branch4=parts.slice(0,5).join('.');
+   const branch3Uraian=branch3==='5.1.02.01'?'Belanja Barang':branch3==='5.1.02.02'?'Belanja Jasa':'Belanja Uang dan/atau Jasa untuk Diberikan kepada Pihak Ketiga/Pihak Lain/Masyarakat';
+   const branch4Uraian=branch4==='5.1.02.01.001'?'Belanja Barang Pakai Habis':branch4==='5.1.02.02.001'?'Belanja Jasa Kantor':'Belanja Uang yang Diberikan kepada Pihak Ketiga/Pihak Lain/Masyarakat';
+   rowsOut.push({kode:branch3,uraian:branch3Uraian,anggaran:accountPagu,lalu:0,kini:0,jenis:'header'});
+   rowsOut.push({kode:branch4,uraian:branch4Uraian,anggaran:accountPagu,lalu:0,kini:0,jenis:'header'});
+   const masterRow=DPA_DETAIL.find(x=>x.subkegiatan===sub&&x.kode===kode);
+   rowsOut.push({kode,uraian:masterRow?.uraian||kode,anggaran:accountPagu,lalu:0,kini:0,jenis:'account'});
+   details.forEach(item=>rowsOut.push({
+     kode:'',
+     uraian:'- '+item.uraian,
+     anggaran:num(item.pagu),
+     lalu:0,
+     kini:0,
+     jenis:'detail',
+     sourceKode:kode
+   }));
+ }
+ npdRows=rowsOut;
+ // Setelah struktur lengkap terbentuk, isi hanya kolom Pencairan Saat Ini dari Lampiran.
+ syncNPDFromLampiran();
+ if(typeof npdRenderRows==='function') npdRenderRows();
+}
+
+function npdAddRow(){
+  npdRows.push({kode:'',uraian:'',anggaran:0,lalu:0,kini:0});
+  npdRenderRows();
+}
+
+function npdMoney(v){return Number(v||0).toLocaleString('id-ID')}
+function npdNum(v){return Number(String(v||'').replace(/[^0-9]/g,''))||0}
+function npdRenderRows(){
+ const tb=document.getElementById('npd-input-rows'); if(!tb)return;
+ tb.innerHTML=npdRows.map((r,i)=>{
+   const h=r.jenis==='header';
+   const sisa=Math.max(0,npdNum(r.anggaran)-npdNum(r.lalu)-npdNum(r.kini));
+   if(h)return `<tr class="font-bold bg-slate-50"><td class="p-2 text-center">${i+1}</td><td class="p-2">${esc(r.kode)}</td><td class="p-2">${esc(r.uraian)}</td><td class="p-2 text-right">${npdMoney(r.anggaran)}</td><td class="p-2 text-right">${npdMoney(r.lalu)}</td><td class="p-2 text-right">${npdMoney(r.kini)}</td><td class="p-2 text-right">${npdMoney(sisa)}</td><td class="p-2"></td></tr>`;
+   const over=npdNum(r.lalu)+npdNum(r.kini)>npdNum(r.anggaran);
+   const showKode=i===0 || npdRows[i-1]?.jenis==='header' || (npdRows[i-1]?.kode||'')!==r.kode;
+   return `<tr class="${over?'bg-red-50':''}"><td class="p-2 text-center font-bold">${i+1}</td><td class="p-2 font-semibold">${showKode?esc(r.kode):''}</td><td class="p-2">${esc(r.uraian)}</td><td class="p-2 text-right font-semibold">${npdMoney(r.anggaran)}</td><td class="p-2 text-right">${npdMoney(r.lalu)}</td><td class="p-2 text-right ${over?'text-red-700':''}">${npdMoney(r.kini)}</td><td class="p-2 text-right font-bold ${over?'text-red-700':''}">${npdMoney(sisa)}</td><td class="p-2"></td></tr>`;
+ }).join('');
+}
+
+function npdRefreshPreview(){
+  const nom=document.getElementById('npd-nomor')?.value||'';
+  const tanggal=document.getElementById('npd-tanggal')?.value||'';
+  const p=document.getElementById('npd-pptk')?.value||'';
+  const program=document.getElementById('npd-program')?.value||'';
+  const kegiatan=document.getElementById('npd-kegiatan')?.value||'';
+  const sub=document.getElementById('npd-subkegiatan')?.value||'';
+  const dpa=document.getElementById('npd-dpa')?.value||'';
+  const tahun=document.getElementById('npd-tahun')?.value||'2026';
+  const f=(id,val)=>{const el=document.getElementById(id);if(el)el.textContent=val};
+  f('npdp-nomor',nom);
+  const dt=tanggal?new Date(tanggal+'T00:00:00'):null;
+  f('npdp-tanggal',dt?dt.toLocaleDateString('id-ID',{day:'2-digit',month:'long',year:'numeric'}):'-');
+  f('npdp-pptk',p);f('npdp-program',program);f('npdp-kegiatan',kegiatan);f('npdp-sub',sub);f('npdp-dpa',dpa);f('npdp-tahun',tahun);
+  const jenis=document.querySelector('input[name="npd-jenis"]:checked')?.value||'Tanpa Panjar';
+  f('npdp-panjar',`(${jenis==='Panjar'?'  X  ':'     '}) Panjar`);
+  f('npdp-tanpa',`(${jenis==='Tanpa Panjar'?'  X  ':'     '}) Tanpa Panjar`);
+  const pa=penggunaAnggaran||{};
+  f('npdp-pa',pa.nama||'-');f('npdp-pa-nip',`NIP. ${pa.nip||'-'}`);
+  f('npdp-ttd-pptk',p||'-');
+  const pobj=masterPejabat.find(x=>x.nama===p);
+  f('npdp-ttd-nip',`NIP. ${(pobj&&pobj.nip)||'-'}`);
+  const tb=document.getElementById('npd-preview-rows');
+  if(tb){
+    tb.innerHTML=npdRows.map((r,i)=>{
+      const s=Math.max(0,npdNum(r.anggaran)-npdNum(r.lalu)-npdNum(r.kini));
+      const h=r.jenis==='header';
+      const showKode=i===0 || npdRows[i-1]?.jenis==='header' || (npdRows[i-1]?.kode||'')!==r.kode;
+      if(h) return `<tr class="font-bold"><td class="border border-black p-1 text-center">${i+1}</td><td class="border border-black p-1">${esc(r.kode)}</td><td class="border border-black p-1">${esc(r.uraian)}</td><td class="border border-black p-1 text-right">${npdMoney(r.anggaran)}</td><td class="border border-black p-1 text-right">${npdMoney(r.lalu)}</td><td class="border border-black p-1 text-right">${npdMoney(r.kini)}</td><td class="border border-black p-1 text-right">${npdMoney(s)}</td></tr>`;
+      return `<tr><td class="border border-black p-1 text-center">${i+1}</td><td class="border border-black p-1">${showKode?esc(r.kode):''}</td><td class="border border-black p-1">${esc(r.uraian)}</td><td class="border border-black p-1 text-right">${npdMoney(r.anggaran)}</td><td class="border border-black p-1 text-right">${npdMoney(r.lalu)}</td><td class="border border-black p-1 text-right">${npdMoney(r.kini)}</td><td class="border border-black p-1 text-right">${npdMoney(s)}</td></tr>`;
+    }).join('');
+  }
+  // Total paling bawah mengikuti langsung baris 5.1 Belanja Operasi.
+  // Jangan menjumlahkan seluruh baris karena baris induk sudah merupakan akumulasi anaknya.
+  const root=npdRows.find(r=>r.kode==='5.1'&&r.jenis==='header');
+  const totals={
+    e:root?npdNum(root.anggaran):0,
+    f:root?npdNum(root.lalu):0,
+    g:root?npdNum(root.kini):0
+  };
+  const totalSisa=root
+    ?Math.max(0,npdNum(root.anggaran)-npdNum(root.lalu)-npdNum(root.kini))
+    :0;
+  f('npd-total-anggaran',`Rp ${npdMoney(totals.e)}`);
+  f('npd-total-lalu',`Rp ${npdMoney(totals.f)}`);
+  f('npd-total-kini',`Rp ${npdMoney(totals.g)}`);
+  f('npd-total-sisa',`Rp ${npdMoney(totalSisa)}`);
+}
+
+const KK_LS_THRESHOLD=50000000;
+const KK_CLASS_KEY='kk_sp2d_bulan_ini_v1';
+function kkClassStore(){try{return JSON.parse(localStorage.getItem(KK_CLASS_KEY)||'{}')}catch(e){return {}}}
+function kkSaveClassStore(v){try{localStorage.setItem(KK_CLASS_KEY,JSON.stringify(v))}catch(e){}}
+function kkCurrentMonth(){
+  const el=document.getElementById('kk-bulan-pelaporan');
+  if(el&&/^\d{4}-\d{2}$/.test(el.value)) return el.value;
+  if(typeof npdBulanPelaporan==='function') return npdBulanPelaporan();
+  const d=document.getElementById('npd-tanggal')?.value||'';
+  if(/^\d{4}-\d{2}/.test(d)) return d.slice(0,7);
+  const now=new Date(); return `${now.getFullYear()}-${String(now.getMonth()+1).padStart(2,'0')}`;
+}
+function kkBulanPelaporanChanged(){
+  const month=kkCurrentMonth();
+  const npdEl=document.getElementById('npd-bulan-pelaporan');
+  if(npdEl && npdEl.value!==month){
+    npdEl.value=month;
+  }
+  try{localStorage.setItem('kk_bulan_pelaporan_v1',month)}catch(e){}
+  if(typeof npdBulanPelaporanChanged==='function'){
+    npdBulanPelaporanChanged();
+  }else if(typeof kkRefreshPreview==='function'){
+    kkRefreshPreview();
+  }
+}
+function kkItemKey(r){return [document.getElementById('npd-subkegiatan')?.value||'',kkCurrentMonth(),r.sourceKode||r.kode||'',String(r.uraian||'').replace(/^\s*-\s*/,'').trim().toLowerCase()].join('||')}
+function kkIsLS(r){return npdNum(r.kini)>KK_LS_THRESHOLD}
+function kkGetClass(r){
+  if(kkIsLS(r)) return 'LS';
+  const store=kkClassStore();
+  return ['UP','GU','TU','KKPD'].includes(store[kkItemKey(r)])?store[kkItemKey(r)]:'GU';
+}
+function kkSetClass(r,jenis){
+  if(kkIsLS(r)) return;
+  const store=kkClassStore(); store[kkItemKey(r)]=jenis; kkSaveClassStore(store); kkRefreshPreview();
+}
+function kkOpenEdit(){
+  const panel=document.getElementById('kk-edit-panel'); if(panel)panel.classList.remove('hidden');
+  const list=document.getElementById('kk-edit-list'); if(!list)return;
+  const details=npdRows.filter(r=>r&&r.jenis==='detail'&&npdNum(r.kini)>0);
+  if(!details.length){list.innerHTML='<div class="text-sm text-slate-600">Belum ada Pencairan Saat Ini dari NPD.</div>';return;}
+  list.innerHTML=details.map((r,i)=>{
+    const ls=kkIsLS(r), cls=kkGetClass(r), val=npdNum(r.kini);
+    const opts=['UP','GU','TU','KKPD'].map(x=>`<option value="${x}" ${(!ls&&cls===x)?'selected':''}>${x}</option>`).join('');
+    return `<div class="grid grid-cols-1 md:grid-cols-[1fr_180px_150px] gap-2 items-center bg-white rounded-xl border border-indigo-100 p-3">
+      <div><div class="font-bold text-slate-800">${esc(r.uraian)}</div><div class="text-xs text-slate-500">${esc(r.sourceKode||'')} · Pencairan ${kkMoney(val)}</div></div>
+      <div class="font-black text-right">${ls?'LS (otomatis)':'Pilih jenis SP2D'}</div>
+      <select ${ls?'disabled':''} onchange="kkSetClass(npdRows[${npdRows.indexOf(r)}],this.value)" class="table-input ${ls?'bg-slate-100':''}">${ls?'<option>LS</option>':opts}</select>
+    </div>`;
+  }).join('');
+}
+function kkCloseEdit(){document.getElementById('kk-edit-panel')?.classList.add('hidden')}
+function kkFindDetailMeta(row){
+  if(!row || row.jenis!=='detail') return {volume:'',satuan:'',harga:0};
+  const sub=document.getElementById('npd-subkegiatan')?.value||document.getElementById('subkegiatan')?.value||'';
+  const kode=row.sourceKode||'';
+  const raw=String(row.uraian||'').replace(/^\s*-\s*/,'').trim();
+  const dpa=DPA_DETAIL.filter(x=>x.subkegiatan===sub&&x.kode===kode);
+  for(const x of dpa){
+    for(const d of (Array.isArray(x.detail)?x.detail:[])){
+      const label=dpaDisplayLabel(sub,d.nama);
+      if(label===raw || d.nama===raw || String(d.nama||'').trim()===raw){
+        return {volume:d.volume??'',satuan:d.satuan||'',harga:num(d.harga||0)};
+      }
+    }
+  }
+  return {volume:'',satuan:'',harga:0};
+}
+function kkMoney(v){return npdMoney(v);}
+function kkRefreshPreview(){
+  if(typeof npdRows==='undefined') return;
+  const kkEl=document.getElementById('kk-bulan-pelaporan');
+  const activeMonth=(kkEl&&/^\d{4}-\d{2}$/.test(kkEl.value))?kkEl.value:(typeof npdBulanPelaporan==='function'?npdBulanPelaporan():'2026-01');
+  if(kkEl && kkEl.value!==activeMonth) kkEl.value=activeMonth;
+  npdRefreshPreview();
+  const sub=document.getElementById('npd-subkegiatan')?.value||'';
+  const setting=NPD_SETTING.find(x=>x.sub===sub)||{};
+  const kegiatan=document.getElementById('npd-kegiatan')?.value||setting.kegiatan||'';
+  const program=document.getElementById('npd-program')?.value||setting.program||'';
+  const bulan=new Date(kkCurrentMonth()+'-01T00:00:00').toLocaleDateString('id-ID',{month:'long',year:'numeric'});
+  const f=(id,v)=>{const el=document.getElementById(id);if(el)el.textContent=v;};
+  f('kk-skpd','KECAMATAN BOGOR TENGAH'); f('kk-program',program); f('kk-kegiatan',kegiatan); f('kk-bulan',bulan); f('kk-sub',sub);
+  const details=npdRows.filter(r=>r&&r.jenis==='detail');
+  const rootRow=npdRows.find(r=>r.kode==='5.1'&&r.jenis==='header');
+  const rootLalu=rootRow?npdNum(rootRow.lalu):0;
+  const detailClass=r=>{const c=kkGetClass(r);return kkIsLS(r)?'LS':c;};
+  const sums={paguNon:0,paguLs:0,lalu:0,up:0,gu:0,tu:0,ls:0,kkpd:0};
+  // Pagu LS mengikuti transaksi/rincian DPA di atas Rp50 juta. Bulan lalu tetap agregat.
+  details.forEach(r=>{
+    const pagu=Math.max(0,npdNum(r.anggaran)), lalu=Math.max(0,npdNum(r.lalu)), kini=Math.max(0,npdNum(r.kini));
+    if(pagu>KK_LS_THRESHOLD)sums.paguLs+=pagu; else sums.paguNon+=pagu;
+    if(kini>0){const c=detailClass(r); if(c==='LS')sums.ls+=kini; else if(c==='UP')sums.up+=kini; else if(c==='TU')sums.tu+=kini; else if(c==='KKPD')sums.kkpd+=kini; else sums.gu+=kini;}
+  });
+  const tb=document.getElementById('kk-preview-rows'); if(!tb)return;
+  const accountAgg=new Map();
+  details.forEach(r=>{const k=r.sourceKode||''; if(!accountAgg.has(k))accountAgg.set(k,{paguNon:0,paguLs:0,lalu:0,up:0,gu:0,tu:0,ls:0,kkpd:0}); const a=accountAgg.get(k); const p=npdNum(r.anggaran),l=npdNum(r.lalu),n=npdNum(r.kini); if(p>KK_LS_THRESHOLD)a.paguLs+=p;else a.paguNon+=p;a.lalu+=l; const c=detailClass(r); if(c==='LS')a.ls+=n; else if(c==='UP')a.up+=n; else if(c==='TU')a.tu+=n; else if(c==='KKPD')a.kkpd+=n; else a.gu+=n;});
+  npdRows.filter(r=>r&&r.jenis==='account').forEach(r=>{const a=accountAgg.get(r.kode); if(a)a.lalu=npdNum(r.lalu);});
+  const calcRow=r=>{
+    if(r.jenis==='detail'){const p=npdNum(r.anggaran),l=npdNum(r.lalu),c=detailClass(r);return {paguNon:p>KK_LS_THRESHOLD?0:p,paguLs:p>KK_LS_THRESHOLD?p:0,lalu:l,up:c==='UP'?npdNum(r.kini):0,gu:c==='GU'?npdNum(r.kini):0,tu:c==='TU'?npdNum(r.kini):0,ls:c==='LS'?npdNum(r.kini):0,kkpd:c==='KKPD'?npdNum(r.kini):0};}
+    const a=[...accountAgg.entries()].filter(([k])=>k===r.kode||k.startsWith((r.kode||'')+'.')).map(([,v])=>v).reduce((z,v)=>{Object.keys(z).forEach(k=>z[k]+=v[k]);return z},{paguNon:0,paguLs:0,lalu:0,up:0,gu:0,tu:0,ls:0,kkpd:0});
+    return a;
+  };
+  tb.innerHTML=npdRows.map((r,i)=>{
+    const v=calcRow(r), kumNon=v.lalu+v.up+v.gu+v.tu+v.kkpd, kumLs=v.ls, sisa=Math.max(0,npdNum(r.anggaran)-kumNon-kumLs);
+    const h=r.jenis==='header'; const showKode=i===0||npdRows[i-1]?.jenis==='header'||(npdRows[i-1]?.kode||'')!==r.kode; const meta=kkFindDetailMeta(r);
+    return `<tr class="${h?'font-bold bg-slate-50':''}">
+      <td class="border border-black p-1 text-center">${i+1}</td><td class="border border-black p-1">${showKode?esc(r.kode):''}</td><td class="border border-black p-1">${esc(r.uraian)}</td>
+      <td class="border border-black p-1 text-center">${h?'':esc(String(meta.volume??''))}</td><td class="border border-black p-1 text-center">${h?'':esc(meta.satuan||'')}</td><td class="border border-black p-1 text-right">${h?'':(meta.harga?kkMoney(meta.harga):'')}</td>
+      <td class="border border-black p-1 text-right">${kkMoney(v.paguNon)}</td><td class="border border-black p-1 text-right">${kkMoney(v.paguLs)}</td>
+      <td class="border border-black p-1 text-right">${kkMoney(v.lalu)}</td><td class="border border-black p-1 text-right">0</td>
+      <td class="border border-black p-1 text-right">${kkMoney(v.up)}</td><td class="border border-black p-1 text-right">${kkMoney(v.gu)}</td><td class="border border-black p-1 text-right">${kkMoney(v.tu)}</td><td class="border border-black p-1 text-right">${kkMoney(v.ls)}</td><td class="border border-black p-1 text-right">${kkMoney(v.kkpd)}</td>
+      <td class="border border-black p-1 text-right">${kkMoney(kumNon)}</td><td class="border border-black p-1 text-right">${kkMoney(kumLs)}</td><td class="border border-black p-1 text-right">${kkMoney(sisa)}</td>
+    </tr>`;
+  }).join('');
+  const pagu=rootRow?npdNum(rootRow.anggaran):0,lalu=rootRow?npdNum(rootRow.lalu):0,kini=rootRow?npdNum(rootRow.kini):0;
+  const setv=(id,v)=>f(id,kkMoney(v));
+  sums.lalu=rootLalu;
+  setv('kk-total-pagu-ugt',sums.paguNon); setv('kk-total-pagu-ls',sums.paguLs); setv('kk-total-lalu-ugt',rootLalu); setv('kk-total-lalu-ls',0);
+  setv('kk-total-up',sums.up); setv('kk-total-gu',sums.gu); setv('kk-total-tu',sums.tu); setv('kk-total-kini-ls',sums.ls); setv('kk-total-kkpd',sums.kkpd); setv('kk-total-kumulatif-ugt',sums.lalu+sums.up+sums.gu+sums.tu+sums.kkpd); setv('kk-total-kumulatif-ls',sums.ls); setv('kk-total-sisa',Math.max(0,pagu-lalu-kini));
+  const pa=document.getElementById('npdp-pa')?.textContent||'', panip=document.getElementById('npdp-pa-nip')?.textContent||'', pptk=document.getElementById('npdp-ttd-pptk')?.textContent||document.getElementById('npd-pptk')?.value||'', pptknip=document.getElementById('npdp-ttd-nip')?.textContent||'';
+  f('kk-pa',pa); f('kk-pa-nip',panip); f('kk-pptk',pptk); f('kk-pptk-nip',pptknip);
+}
+function printKK(){
+  kkRefreshPreview();
+  clearPrintModes();
+  document.body.classList.add('print-kk');
+  window.print();
+  setTimeout(clearPrintModes,500);
+}
+
+function npdPreview(){const bad=npdRows.some(r=>r.jenis!=='header'&&npdNum(r.lalu)+npdNum(r.kini)>npdNum(r.anggaran));if(bad){alert('Pencairan melebihi pagu anggaran dasar DPA. Periksa nilai yang berwarna merah.');return;}saveMonthlyNPDSnapshot();initMonthlySelectors();npdRefreshPreview();document.getElementById('npd-print-wrap')?.scrollIntoView({behavior:'smooth',block:'start'})}
+function printNPD(){
+  npdRefreshPreview();
+  clearPrintModes();
+  document.body.classList.add('print-npd');
+  window.print();
+  setTimeout(clearPrintModes,500);
+}
+
+function cloneCleanForPrint(el){
+  if(!el)return null;
+  const c=el.cloneNode(true);
+  c.querySelectorAll('.no-print').forEach(x=>x.remove());
+  c.classList.remove('shadow-xl','shadow-2xl','border','rounded-3xl');
+  return c;
+}
+
+function printRekapGabungan(selectedSI){
+  // Jika dipanggil dari baris Rekap, gunakan S.I tersebut. Jika dari tombol umum, gunakan S.I terbaru.
+  let data=selectedSI;
+  if(!data){
+    try{
+      const all=JSON.parse(localStorage.getItem('si_database')||'[]');
+      data=Array.isArray(all)&&all.length?all[0]:null;
+    }catch(e){ data=null; }
+  }
+  if(!data){alert('Belum ada Pengajuan S.I untuk dibuat Rekapan Gabungan.');return;}
+
+  // Sinkronkan Lampiran dan NPD ke S.I yang dipilih tanpa mengubah data form aslinya.
+  applySI(data);
+  npdLoadFromSI();
+  npdRefreshPreview();
+
+  const wrap=document.getElementById('rekap-print-wrap');
+  if(!wrap){alert('Area Rekapan Gabungan belum tersedia.');return;}
+  wrap.innerHTML='';
+
+  const siSource=document.getElementById('print-area');
+  const lampSource=document.getElementById('lampiran-print-area');
+  const npdSource=document.getElementById('npd-print-area');
+
+  const siPage=document.createElement('section');
+  siPage.className='rekap-si-page';
+  const siClone=cloneCleanForPrint(siSource);
+  if(siClone)siPage.appendChild(siClone);
+
+  // Untuk Lampiran, jika ada hasil tersimpan yang sesuai S.I, tampilkan hasil tersebut.
+  // Jika belum ada, tampilkan preview Lampiran yang sedang terhubung ke S.I.
+  const lampPage=document.createElement('section');
+  lampPage.className='rekap-lampiran-page';
+  const lampClone=cloneCleanForPrint(lampSource);
+  if(lampClone)lampPage.appendChild(lampClone);
+
+  const npdPage=document.createElement('section');
+  npdPage.className='rekap-npd-page';
+  const npdClone=cloneCleanForPrint(npdSource);
+  if(npdClone)npdPage.appendChild(npdClone);
+
+  wrap.appendChild(siPage);
+  wrap.appendChild(lampPage);
+  wrap.appendChild(npdPage);
+
+  clearPrintModes();
+  document.body.classList.add('print-rekap');
+  window.print();
+  setTimeout(clearPrintModes,700);
+}
+
+function npdReset(){document.getElementById('npd-nomor').value='';npdRows=[];npdAddRow();npdLoadFromSI();npdRenderRows();npdRefreshPreview()}
+
+
+// Sinkronisasi awal selector Bulan Pelaporan Kartu Kendali dengan bulan NPD yang aktif.
+document.addEventListener('DOMContentLoaded',()=>{
+  const kkEl=document.getElementById('kk-bulan-pelaporan');
+  const npdEl=document.getElementById('npd-bulan-pelaporan');
+  if(kkEl){
+    let month='';
+    try{month=localStorage.getItem('kk_bulan_pelaporan_v1')||''}catch(e){}
+    if(!/^\d{4}-\d{2}$/.test(month)) month=npdEl?.value||'2026-01';
+    kkEl.value=month;
+  }
+});
+</script>
+</body>
+</html>
