@@ -1171,18 +1171,44 @@
         clearTimeout(timeoutId);
       }
     }
+    // NPD dan Kartu Kendali adalah arsip transaksi: gabungkan berdasarkan ID agar
+    // data yang hanya ada di browser tidak hilang saat login/muat data cloud.
+    const MERGE_KEYS = new Set(['npd_database_v1', 'kk_database_v1']);
+    function mergeSavedRecords(key, remoteValue) {
+      const remote = typeof remoteValue === 'string' ? safeParse(remoteValue) : remoteValue;
+      const local = safeParse(localStorage.getItem(key));
+      if (!Array.isArray(remote) || !Array.isArray(local)) return remote;
+      const merged = [];
+      const seen = new Set();
+      // Versi cloud diprioritaskan jika ID sama; arsip lokal yang ID-nya belum ada tetap dipertahankan.
+      remote.concat(local).forEach(function(item) {
+        const id = item && item.id != null ? String(item.id) : null;
+        if (id === null) { merged.push(item); return; }
+        if (seen.has(id)) return;
+        seen.add(id); merged.push(item);
+      });
+      return merged;
+    }
     function applyRemoteData(data, reloadIfChanged) {
       if (!data || typeof data !== 'object') data = {};
       let changed = false;
+      const normalizedRemote = Object.assign({}, data);
       applyingRemote = true;
-      Object.keys(data).forEach(function(key) {
-        if (!SYNC_KEYS.has(key)) return;
-        const value = data[key] == null ? null : (typeof data[key] === 'string' ? data[key] : JSON.stringify(data[key]));
-        const old = localStorage.getItem(key);
-        if (value === null) { if (old !== null) { localStorage.removeItem(key); changed = true; } }
-        else if (old !== value) { localStorage.setItem(key, value); changed = true; }
-      });
-      applyingRemote = false; remoteSnapshot = data;
+      try {
+        Object.keys(data).forEach(function(key) {
+          if (!SYNC_KEYS.has(key)) return;
+          let incoming = data[key];
+          if (incoming != null && MERGE_KEYS.has(key)) {
+            incoming = mergeSavedRecords(key, incoming);
+            normalizedRemote[key] = incoming;
+          }
+          const value = incoming == null ? null : (typeof incoming === 'string' ? incoming : JSON.stringify(incoming));
+          const old = localStorage.getItem(key);
+          if (value === null) { if (old !== null) { localStorage.removeItem(key); changed = true; } }
+          else if (old !== value) { localStorage.setItem(key, value); changed = true; }
+        });
+      } finally { applyingRemote = false; }
+      remoteSnapshot = normalizedRemote;
       if (changed && reloadIfChanged) location.reload();
       return changed;
     }
@@ -1203,14 +1229,25 @@
       }
       await Promise.all(pendingWrites);
     }
+    // Setelah arsip lokal dan cloud digabung, kirim hasil gabungan agar kedua sisi sama.
+    async function syncMergedArchivesToRemote() {
+      if (!auth.currentUser) return;
+      for (const key of MERGE_KEYS) {
+        const localValue = localStorage.getItem(key);
+        if (localValue === null) continue;
+        const ok = await putRemote(key, localValue);
+        if (!ok) console.warn('[Firebase] Arsip ' + key + ' masih lokal; akan perlu dicoba sinkron ulang.');
+      }
+    }
     async function putRemote(key, value) {
-      if (!auth.currentUser || !SYNC_KEYS.has(key) || applyingRemote) return;
+      if (!auth.currentUser || !SYNC_KEYS.has(key) || applyingRemote) return false;
       try {
         await request(ROOT + '/' + encodeURIComponent(key) + '.json', {
           method: 'PUT', headers: { 'Content-Type': 'application/json' },
           body: value === null ? 'null' : JSON.stringify(safeParse(value))
         });
-      } catch(e) { console.warn('[Firebase] Gagal menyimpan ' + key + ':', e); }
+        return true;
+      } catch(e) { console.warn('[Firebase] Gagal menyimpan ' + key + ':', e); return false; }
     }
     const originalSetItem = Storage.prototype.setItem;
     const originalRemoveItem = Storage.prototype.removeItem;
@@ -1248,6 +1285,7 @@
       try {
         await loadRemote();
         await syncLocalKeysMissingRemotely();
+        await syncMergedArchivesToRemote();
         startRealtime();
       } catch (error) {
         console.error('[Firebase Database setelah autentikasi berhasil]', error);
@@ -1265,6 +1303,7 @@
       try {
         const changed = await loadRemote();
         await syncLocalKeysMissingRemotely();
+        await syncMergedArchivesToRemote();
         if (changed) { location.reload(); return; }
         document.body.classList.add('app-authenticated');
         startRealtime();
